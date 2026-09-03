@@ -161,14 +161,20 @@ class DatabaseManager:
         try:
             cur = conn.cursor()
             for email, pwd_hash, name, role in default_users:
-                # Verifica se o e-mail já existe
                 cur.execute(f"SELECT 1 FROM app_user WHERE LOWER(email) = LOWER({placeholder});", (email,))
                 if not cur.fetchone():
                     sql = f"""
-                    INSERT INTO app_user (email, password_hash, full_name, role)
-                    VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder});
+                    INSERT INTO app_user (email, password_hash, full_name, role, is_active)
+                    VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, TRUE);
                     """
                     cur.execute(sql, (email, pwd_hash, name, role))
+                else:
+                    sql = f"""
+                    UPDATE app_user 
+                    SET password_hash = {placeholder}, role = {placeholder}, is_active = TRUE
+                    WHERE LOWER(email) = LOWER({placeholder});
+                    """
+                    cur.execute(sql, (pwd_hash, role, email))
             conn.commit()
             cur.close()
         finally:
