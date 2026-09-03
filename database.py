@@ -154,6 +154,18 @@ class DatabaseManager:
         except Exception:
             return False
 
+    def update_user_password(self, user_id: int, new_password: str) -> bool:
+        """Atualiza a senha de um usuário no banco de dados com hash seguro."""
+        pwd_hash = self.hash_password(new_password)
+        placeholder = "%s" if self.is_postgres else "?"
+        sql = f"UPDATE app_user SET password_hash = {placeholder} WHERE user_id = {placeholder};"
+        try:
+            self.execute_non_query(sql, (pwd_hash, user_id))
+            return True
+        except Exception:
+            return False
+
+
     def list_users(self) -> pd.DataFrame:
         """Retorna lista de usuários cadastrados (sem expor o hash da senha)."""
         return self.execute_query("SELECT user_id, email, full_name, role, allowed_reports, is_active, created_at FROM app_user ORDER BY created_at DESC;")

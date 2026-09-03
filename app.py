@@ -222,13 +222,17 @@ tabs_map = {}
 if role == "admin":
     tabs_map["users"] = "🔑 Gestão de Acessos"
     tabs_map["etl"] = "📥 Ingestão & Atualização (ETL)"
-    tabs_map["db"] = "🗄️ Banco de Dados & Console SQL"
+    tabs_map["db"] = "🗄️ Tabelas & Console SQL"
     tabs_map["reports"] = "📊 Central de Relatórios"
+    tabs_map["password"] = "🔒 Mudar Senha"
 else:
     tabs_map["reports"] = "📊 Central de Relatórios"
+    tabs_map["password"] = "🔒 Mudar Senha"
+
 
 tab_objects = st.tabs(list(tabs_map.values()))
 tab_dict = {key: tab_objects[i] for i, key in enumerate(tabs_map.keys())}
+
 
 # ==============================================================================
 # ABA: GESTÃO DE ACESSOS (Apenas Admin)
@@ -477,29 +481,19 @@ if "etl" in tab_dict:
 
 
 # ==============================================================================
-# ABA: BANCO DE DADOS & CONSOLE SQL — Apenas Admin
+# ABA: TABELAS & CONSOLE SQL — Apenas Admin
 # ==============================================================================
 if "db" in tab_dict:
     with tab_dict["db"]:
-        st.subheader("Explorador de Tabelas Relacionais")
-        table_choice = st.selectbox("Selecione a Tabela para Visualizar:", ["person", "membership", "person_history", "certification", "voluntary", "custom_report", "app_user"])
-        try:
-            df_table = db_manager.execute_query(f"SELECT * FROM {table_choice} LIMIT 500;")
-            st.markdown(f"**Registros exibidos:** {len(df_table)} linhas")
-            st.dataframe(df_table, width="stretch")
-        except Exception as e:
-            st.error(f"Erro ao consultar tabela {table_choice}: {e}")
-
-        st.markdown("---")
         st.subheader("Console SQL Live & Gerador de Relatórios Customizados")
         custom_sql = st.text_area("Digite sua consulta SQL:", value="SELECT p.personid, p.fullname, p.primaryemail, m.originaljoindate, m.startdateforterm, m.enddateforterm, m.plannameforchapters, m.tenureinyears FROM person p JOIN membership m ON p.personid = m.personid LIMIT 50;")
         
-        if st.button("Executar Consulta SQL"):
+        if st.button("Executar Consulta SQL", type="primary"):
             try:
                 df_custom = db_manager.execute_query(custom_sql)
                 st.session_state["last_sql_result"] = df_custom
                 st.session_state["last_sql_query"] = custom_sql
-                st.dataframe(df_custom, width="stretch")
+                st.dataframe(df_custom, use_container_width=True)
             except Exception as e:
                 st.error(f"Erro na execução da consulta: {e}")
 
@@ -543,6 +537,18 @@ if "db" in tab_dict:
                         if db_manager.delete_custom_report(cid):
                             st.success(f"Relatório '{cname}' excluído com sucesso!")
                             st.rerun()
+
+        # Explorador de Tabelas em Expander Fechado
+        st.markdown("---")
+        with st.expander("🔍 Explorador de Tabelas Relacionais (Visualizar Dados Brutos)", expanded=False):
+            table_choice = st.selectbox("Selecione a Tabela para Visualizar:", ["person", "membership", "person_history", "certification", "voluntary", "custom_report", "app_user"])
+            try:
+                df_table = db_manager.execute_query(f"SELECT * FROM {table_choice} LIMIT 500;")
+                st.markdown(f"**Registros exibidos:** {len(df_table)} linhas")
+                st.dataframe(df_table, use_container_width=True)
+            except Exception as e:
+                st.error(f"Erro ao consultar tabela {table_choice}: {e}")
+
 
 # ==============================================================================
 # ABA: CENTRAL DE RELATÓRIOS (Visibilidade de acordo com RBAC)
@@ -612,43 +618,85 @@ if "reports" in tab_dict:
         if not active_reports:
             st.warning("⚠️ Seu usuário ainda não possui relatórios autorizados. Entre em contato com o Administrador do sistema.")
         else:
-            rep_tabs = st.tabs([r[0] for r in active_reports])
+            col_nav, col_content = st.columns([1, 3])
             
-            for idx, (title, filename, func) in enumerate(active_reports):
-                with rep_tabs[idx]:
-                    try:
-                        df = func()
-                        
-                        col_hdr1, col_hdr2 = st.columns([2, 1])
-                        with col_hdr1:
-                            st.markdown(f"### {title}")
-                            st.markdown(f"**Total de registros:** {len(df)}")
-                        
-                        # Botões de Download acima da tabela de dados
-                        c1, c2 = st.columns(2)
-                        with c1:
+            with col_nav:
+                st.markdown("#### 📌 Escolha o Relatório")
+                selected_report_idx = st.radio(
+                    "Selecione o Relatório:",
+                    options=range(len(active_reports)),
+                    format_func=lambda idx: active_reports[idx][0],
+                    key="vertical_report_radio_selector"
+                )
+
+            with col_content:
+                title, filename, func = active_reports[selected_report_idx]
+                try:
+                    df = func()
+                    
+                    st.markdown(f"### {title}")
+                    st.markdown(f"**Total de registros:** {len(df)}")
+                    
+                    # Botões de Download acima da tabela de dados
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        st.download_button(
+                            f"⬇️ Baixar CSV",
+                            data=df.to_csv(index=False).encode('utf-8'),
+                            file_name=f"{filename}_{ref_date_str}.csv",
+                            mime="text/csv",
+                            type="primary",
+                            key=f"dl_csv_{selected_report_idx}_{filename}"
+                        )
+                    with c2:
+                        bio = tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx')
+                        df.to_excel(bio.name, index=False)
+                        with open(bio.name, "rb") as f:
                             st.download_button(
-                                f"⬇️ Baixar CSV - {filename}",
-                                data=df.to_csv(index=False).encode('utf-8'),
-                                file_name=f"{filename}_{ref_date_str}.csv",
-                                mime="text/csv",
+                                f"⬇️ Baixar Excel",
+                                data=f.read(),
+                                file_name=f"{filename}_{ref_date_str}.xlsx",
+                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                                 type="primary",
-                                key=f"dl_csv_{idx}_{filename}"
+                                key=f"dl_xlsx_{selected_report_idx}_{filename}"
                             )
-                        with c2:
-                            bio = tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx')
-                            df.to_excel(bio.name, index=False)
-                            with open(bio.name, "rb") as f:
-                                st.download_button(
-                                    f"⬇️ Baixar Excel - {filename}",
-                                    data=f.read(),
-                                    file_name=f"{filename}_{ref_date_str}.xlsx",
-                                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                    type="primary",
-                                    key=f"dl_xlsx_{idx}_{filename}"
-                                )
-                        
-                        st.markdown("---")
-                        st.dataframe(df, width="stretch")
-                    except Exception as err:
-                        st.error(f"Erro ao carregar o relatório '{title}': {err}")
+                    
+                    st.markdown("---")
+                    st.dataframe(df, use_container_width=True)
+                except Exception as err:
+                    st.error(f"Erro ao carregar o relatório '{title}': {err}")
+
+# ==============================================================================
+# ABA: MUDAR SENHA (Disponível para todos os usuários)
+# ==============================================================================
+if "password" in tab_dict:
+    with tab_dict["password"]:
+        st.subheader("🔒 Alterar Minha Senha")
+        st.markdown("Atualize a senha de acesso da sua conta pessoal.")
+        
+        col_p1, col_p2, col_p3 = st.columns([1, 2, 1])
+        with col_p2:
+            with st.form("form_change_my_password"):
+                curr_pass = st.text_input("Senha Atual", type="password", placeholder="••••••••")
+                new_pass = st.text_input("Nova Senha", type="password", placeholder="Mínimo 6 caracteres")
+                confirm_pass = st.text_input("Confirmar Nova Senha", type="password", placeholder="••••••••")
+                
+                submit_change = st.form_submit_button("🔒 Atualizar Minha Senha", type="primary", use_container_width=True)
+                
+                if submit_change:
+                    if not curr_pass or not new_pass or not confirm_pass:
+                        st.error("Por favor, preencha todos os campos do formulário.")
+                    elif new_pass != confirm_pass:
+                        st.error("A nova senha e a confirmação de senha não coincidem.")
+                    elif len(new_pass) < 6:
+                        st.warning("A nova senha deve ter no mínimo 6 caracteres.")
+                    else:
+                        auth_user = db_manager.authenticate_user(user["email"], curr_pass)
+                        if not auth_user:
+                            st.error("A senha atual informada está incorreta.")
+                        else:
+                            if db_manager.update_user_password(user["user_id"], new_pass):
+                                st.success("🎉 Sua senha foi alterada com sucesso! Utilize a nova senha na próxima autenticação.")
+                            else:
+                                st.error("Erro ao atualizar a senha no banco de dados.")
+
