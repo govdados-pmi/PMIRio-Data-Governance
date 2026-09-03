@@ -88,6 +88,9 @@ class DatabaseManager:
         """
         Executa o DDL de criação das tabelas se elas não existirem e insere os usuários padrão.
         """
+        if not os.path.exists(schema_file):
+            return
+
         with open(schema_file, "r", encoding="utf-8") as f:
             sql_script = f.read()
 
@@ -95,82 +98,40 @@ class DatabaseManager:
         try:
             cur = conn.cursor()
             if self.is_postgres:
-                # Garante CREATE TABLE IF NOT EXISTS no Postgres
+                # No Postgres, garante CREATE TABLE IF NOT EXISTS e SERIAL PRIMARY KEY
                 pg_script = sql_script.replace("CREATE TABLE ", "CREATE TABLE IF NOT EXISTS ")
-                cur.execute(pg_script)
-                conn.commit()
+                pg_script = pg_script.replace("INTEGER PRIMARY KEY AUTOINCREMENT", "SERIAL PRIMARY KEY")
+                
+                # Executa instrução por instrução isoladamente com rollback individual se já existir
+                statements = [s.strip() for s in pg_script.split(";") if s.strip()]
+                for stmt in statements:
+                    try:
+                        cur.execute(stmt)
+                        conn.commit()
+                    except Exception:
+                        conn.rollback()
             else:
-                # Para SQLite, converte os tipos SERIAL -> INTEGER PRIMARY KEY AUTOINCREMENT
                 sqlite_script = sql_script.replace("SERIAL PRIMARY KEY", "INTEGER PRIMARY KEY AUTOINCREMENT")
                 sqlite_script = sqlite_script.replace("CREATE TABLE ", "CREATE TABLE IF NOT EXISTS ")
                 cur.executescript(sqlite_script)
                 conn.commit()
             cur.close()
 
-            # Migração graciosa de colunas/tabelas novas para bancos já existentes
-            conn_mig = self.get_connection()
-            cur_mig = conn_mig.cursor()
-            try:
-                # 1. Adiciona colunas novas se não existirem
-                for alter_sql in [
-                    "ALTER TABLE membership ADD COLUMN tenureinyears NUMERIC;",
-                    "ALTER TABLE person ADD COLUMN alternativeemail VARCHAR;",
-                    "ALTER TABLE app_user ADD COLUMN allowed_reports VARCHAR;",
-                    "ALTER TABLE app_user ADD COLUMN is_active BOOLEAN DEFAULT TRUE;"
-                ]:
-                    try:
-                        cur_mig.execute(alter_sql)
-                        conn_mig.commit()
-                    except Exception:
-                        conn_mig.rollback()
-
-                # 2. Cria person_history se não existir
-                ph_sql = """
-                CREATE TABLE IF NOT EXISTS person_history (
-                    history_id SERIAL PRIMARY KEY,
-                    personid BIGINT REFERENCES person (personid),
-                    field_changed VARCHAR NOT NULL,
-                    old_value VARCHAR,
-                    new_value VARCHAR,
-                    changed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                );
-                """ if self.is_postgres else """
-                CREATE TABLE IF NOT EXISTS person_history (
-                    history_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    personid BIGINT REFERENCES person (personid),
-                    field_changed VARCHAR NOT NULL,
-                    old_value VARCHAR,
-                    new_value VARCHAR,
-                    changed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                );
-                """
-                cur_mig.execute(ph_sql)
-                conn_mig.commit()
-
-                # 3. Cria custom_report se não existir
-                cr_sql = """
-                CREATE TABLE IF NOT EXISTS custom_report (
-                    report_id SERIAL PRIMARY KEY,
-                    report_name VARCHAR NOT NULL,
-                    sql_query TEXT NOT NULL,
-                    description VARCHAR,
-                    created_by VARCHAR,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                );
-                """ if self.is_postgres else """
-                CREATE TABLE IF NOT EXISTS custom_report (
-                    report_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    report_name VARCHAR NOT NULL,
-                    sql_query TEXT NOT NULL,
-                    description VARCHAR,
-                    created_by VARCHAR,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                );
-                """
-                cur_mig.execute(cr_sql)
-                conn_mig.commit()
-            finally:
-                conn_mig.close()
+            # Migração graciosa de colunas individuais para bancos já existentes
+            for alter_sql in [
+                "ALTER TABLE membership ADD COLUMN tenureinyears NUMERIC;",
+                "ALTER TABLE person ADD COLUMN alternativeemail VARCHAR;",
+                "ALTER TABLE app_user ADD COLUMN allowed_reports VARCHAR;",
+                "ALTER TABLE app_user ADD COLUMN is_active BOOLEAN DEFAULT TRUE;"
+            ]:
+                cur_mig = conn.cursor()
+                try:
+                    cur_mig.execute(alter_sql)
+                    conn.commit()
+                except Exception:
+                    conn.rollback()
+                finally:
+                    cur_mig.close()
         finally:
             conn.close()
 
