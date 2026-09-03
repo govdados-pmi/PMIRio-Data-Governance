@@ -96,7 +96,8 @@ class DatabaseManager:
                 "ALTER TABLE membership ADD COLUMN tenureinyears NUMERIC;",
                 "ALTER TABLE person ADD COLUMN alternativeemail VARCHAR;",
                 "ALTER TABLE app_user ADD COLUMN allowed_reports VARCHAR;",
-                "ALTER TABLE app_user ADD COLUMN is_active BOOLEAN DEFAULT TRUE;"
+                "ALTER TABLE app_user ADD COLUMN is_active BOOLEAN DEFAULT TRUE;",
+                "ALTER TABLE certification ALTER COLUMN certificationid DROP NOT NULL;"
             ]:
                 cur_mig = conn.cursor()
                 try:

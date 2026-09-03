@@ -534,6 +534,11 @@ class ETLPipeline:
                 ctype = clean_str(row.get('certificationtypename'))
                 start_dt = clean_date(row.get('effectivestartdate'))
                 
+                # Se certificationid vier nulo no Excel, gera um ID sintético único baseado no personid e tipo/data
+                if not cid:
+                    seed_str = f"{pid}_{ctype}_{grant_dt}"
+                    cid = int(str(pid) + str(abs(hash(seed_str)) % 100000))
+                
                 c_key = (cid, ctype, str(start_dt) if start_dt else "")
 
                 if c_key in existing_certs:
