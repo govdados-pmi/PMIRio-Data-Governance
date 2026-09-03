@@ -23,13 +23,21 @@ st.set_page_config(
     page_title="PMI Rio - Governança & Ingestão de Dados",
     page_icon="📊",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed"
 )
 
 # Estilização CSS Personalizada com a Identidade Visual Oficial do PMI (2024 Brand Guidelines)
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap');
+    
+    /* Oculta completamente a barra lateral */
+    [data-testid="stSidebar"] {
+        display: none !important;
+    }
+    [data-testid="collapsedControl"] {
+        display: none !important;
+    }
     
     /* Tipografia Global e Cores do PMI */
     html, body, [class*="css"] {
@@ -39,19 +47,19 @@ st.markdown("""
     
     /* Estilo do Header Principal */
     .main-title {
-        font-size: 2.3rem;
+        font-size: 2.1rem;
         font-weight: 700;
         color: #461DA3;
         background: linear-gradient(90deg, #270F53 0%, #461DA3 50%, #6CBEDE 100%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
-        margin-bottom: 0.2rem;
+        margin-bottom: 0.1rem;
         letter-spacing: -0.5px;
     }
     .sub-title {
-        font-size: 1.05rem;
+        font-size: 0.98rem;
         color: #44789B;
-        margin-bottom: 1.5rem;
+        margin-bottom: 1rem;
         font-weight: 500;
     }
     
@@ -144,7 +152,7 @@ if not st.session_state["logged_in"]:
         with st.form("login_form"):
             email_input = st.text_input("E-mail Institucional", placeholder="diretoria@pmirio.org.br")
             password_input = st.text_input("Senha", type="password", placeholder="••••••••")
-            submit_login = st.form_submit_button("Entrar no Portal", type="primary", width="stretch")
+            submit_login = st.form_submit_button("Entrar no Portal", type="primary", use_container_width=True)
             
             if submit_login:
                 user = db_manager.authenticate_user(email_input, password_input)
@@ -163,45 +171,20 @@ if not st.session_state["logged_in"]:
 user = st.session_state["user"]
 role = user["role"]
 
-# Header Principal
-st.markdown('<h1 class="main-title">PMI Rio — Portal de Dados & Governança</h1>', unsafe_allow_html=True)
-st.markdown(f'<p class="sub-title">Conectado como <strong>{user["full_name"]}</strong> ({user["email"]})</p>', unsafe_allow_html=True)
-
-# Sidebar
-with st.sidebar:
-    st.title("⚡ Usuário Autenticado")
+# Header Principal com Botão de Logout no Canto Superior Direito
+col_hdr1, col_hdr2 = st.columns([3, 1])
+with col_hdr1:
+    st.markdown('<h1 class="main-title">PMI Rio — Portal de Dados & Governança</h1>', unsafe_allow_html=True)
+    st.markdown(f'<p class="sub-title">Conectado como <strong>{user["full_name"]}</strong> ({user["email"]})</p>', unsafe_allow_html=True)
+with col_hdr2:
     badge_class = f"badge-{role}" if role in ["admin", "view"] else "badge-view"
-    role_desc = "Acesso Total (Admin)" if role == "admin" else "Acesso de Visualização"
-    st.markdown(f'<span class="role-badge {badge_class}">{role_desc}</span>', unsafe_allow_html=True)
-    st.markdown("---")
-    
-    if st.button("🚪 Sair (Logout)", width="stretch"):
+    role_desc = "👑 Admin" if role == "admin" else "👁️ Visualização"
+    st.markdown(f'<div style="text-align: right; margin-bottom: 6px;"><span class="role-badge {badge_class}">{role_desc}</span></div>', unsafe_allow_html=True)
+    if st.button("🚪 Sair (Logout)", type="secondary", use_container_width=True, key="top_right_logout_btn"):
         st.session_state["logged_in"] = False
         st.session_state["user"] = None
         st.rerun()
-        
-    st.markdown("---")
-    db_type = "⚡ Supabase (PostgreSQL)" if db_manager.is_postgres else "SQLite (Local)"
-    st.info(f"**Banco Conectado:** {db_type}")
-    
-    if role == "admin":
-        with st.expander("🔑 Conexão Supabase (PostgreSQL)"):
-            st.markdown("Cole sua **Connection String** do Supabase:")
-            supabase_url_input = st.text_input(
-                "URI do Supabase", 
-                value=db_manager.connection_string or "",
-                type="password",
-                placeholder="postgresql://postgres:[SENHA]@db.[PROJECT_REF].supabase.co:5432/postgres"
-            )
-            if st.button("Conectar ao Supabase"):
-                if supabase_url_input.strip():
-                    db_manager.update_connection(supabase_url_input.strip())
-                    try:
-                        db_manager.init_db()
-                        st.success("Conectado ao Supabase PostgreSQL com sucesso!")
-                        st.rerun()
-                    except Exception as err:
-                        st.error(f"Erro ao conectar no Supabase: {err}")
+
 
 # Dicionário de relatórios padrão do sistema (Filiados Ativos em primeiro lugar)
 STANDARD_REPORTS_DICT = {
@@ -250,45 +233,51 @@ if "users" in tab_dict:
                 cid = str(crow["report_id"])
                 all_report_options[f"custom_{cid}"] = f"📊 [Custom] {crow['report_name']}"
 
-        # Formulário de Cadastro de Novo Acesso
-        with st.form("form_add_user"):
-            st.markdown("### ➕ Cadastrar Novo Acesso")
-            c1, c2 = st.columns(2)
-            with c1:
-                new_email = st.text_input("E-mail Institucional", placeholder="nome.sobrenome@pmirio.org.br")
-                new_name = st.text_input("Nome Completo", placeholder="Ex: Maria Souza")
-            with c2:
-                new_pass = st.text_input("Senha Inicial", type="password", placeholder="••••••••")
-                new_role = st.selectbox(
-                    "Perfil de Acesso", 
-                    options=["admin", "view"],
-                    format_func=lambda x: "👑 Acesso Total (Administrador)" if x == "admin" else "👁️ Acesso de Visualização"
-                )
-            
-            selected_reports = []
-            if new_role == "view":
-                st.markdown("#### 🎯 Permissão Granular de Relatórios (Apenas para Acesso de Visualização)")
-                selected_reports = st.multiselect(
-                    "Selecione os Relatórios Autorizados:",
-                    options=list(all_report_options.keys()),
-                    format_func=lambda x: all_report_options[x],
-                    default=list(all_report_options.keys())
-                )
-            
-            submit_user = st.form_submit_button("🚀 Cadastrar Novo Acesso", type="primary", width="stretch")
-            if submit_user:
-                if new_email and new_name and new_pass:
-                    allowed_json = json.dumps(selected_reports) if new_role == "view" else None
-                    if db_manager.create_user(new_email, new_pass, new_name, new_role, allowed_json):
-                        st.success(f"Acesso criado com sucesso para {new_name} ({new_email})!")
-                        st.rerun()
+        # Formulário de Cadastro de Novo Acesso em Expander Fechado
+        with st.expander("➕ Cadastrar Novo Acesso", expanded=False):
+            with st.form("form_add_user"):
+                c1, c2 = st.columns(2)
+                with c1:
+                    new_email = st.text_input("E-mail Institucional", placeholder="nome.sobrenome@pmirio.org.br")
+                    new_name = st.text_input("Nome Completo", placeholder="Ex: Maria Souza")
+                with c2:
+                    new_pass = st.text_input("Senha Inicial", type="password", placeholder="••••••••")
+                    new_role = st.selectbox(
+                        "Perfil de Acesso", 
+                        options=["admin", "view"],
+                        format_func=lambda x: "👑 Acesso Total (Administrador)" if x == "admin" else "👁️ Acesso de Visualização"
+                    )
+                
+                selected_reports = []
+                if new_role == "view":
+                    st.markdown("#### 🎯 Permissão Granular de Relatórios (Apenas para Acesso de Visualização)")
+                    selected_reports = st.multiselect(
+                        "Selecione os Relatórios Autorizados:",
+                        options=list(all_report_options.keys()),
+                        format_func=lambda x: all_report_options[x],
+                        default=list(all_report_options.keys())
+                    )
+                
+                submit_user = st.form_submit_button("🚀 Cadastrar Novo Acesso", type="primary", use_container_width=True)
+                if submit_user:
+                    if new_email and new_name and new_pass:
+                        allowed_json = json.dumps(selected_reports) if new_role == "view" else None
+                        if db_manager.create_user(new_email, new_pass, new_name, new_role, allowed_json):
+                            st.success(f"Acesso criado com sucesso para {new_name} ({new_email})!")
+                            st.rerun()
+                        else:
+                            st.error("Erro ao cadastrar usuário. O e-mail já pode estar cadastrado no banco.")
                     else:
-                        st.error("Erro ao cadastrar usuário. O e-mail já pode estar cadastrado no banco.")
-                else:
-                    st.warning("Preencha todos os campos obrigatórios do formulário.")
-                    
+                        st.warning("Preencha todos os campos obrigatórios do formulário.")
+                        
         st.markdown("---")
-        st.markdown("### 📋 Usuários Cadastrados no Banco de Dados")
+        col_u_hdr, col_u_ref = st.columns([3, 1])
+        with col_u_hdr:
+            st.markdown("### 📋 Usuários Cadastrados no Banco de Dados")
+        with col_u_ref:
+            if st.button("🔄 Atualizar Lista", key="btn_refresh_users_list", use_container_width=True):
+                st.rerun()
+
         
         users_df = db_manager.list_users()
         if not users_df.empty:
@@ -518,8 +507,15 @@ if "db" in tab_dict:
 
         # Lista Relatórios Personalizados Salvos
         st.markdown("---")
-        st.subheader("📋 Relatórios Personalizados Criados pelo Console SQL")
+        col_c_hdr, col_c_ref = st.columns([3, 1])
+        with col_c_hdr:
+            st.subheader("📋 Relatórios Personalizados Criados pelo Console SQL")
+        with col_c_ref:
+            if st.button("🔄 Atualizar Lista", key="btn_refresh_custom_reports", use_container_width=True):
+                st.rerun()
+
         c_reports = db_manager.list_custom_reports()
+
         if not c_reports.empty:
             for idx, crow in c_reports.iterrows():
                 cid = int(crow["report_id"])
@@ -558,14 +554,7 @@ if "db" in tab_dict:
 if "reports" in tab_dict:
     with tab_dict["reports"]:
         st.subheader("📊 Central de Relatórios Executivos & Personalizados")
-        st.markdown("Relatórios dinâmicos filtrados conforme suas permissões de acesso.")
-        
-        # Filtro de Data de Referência posicionado no topo/centro da Central de Relatórios
-        col_d1, col_d2, col_d3 = st.columns([1, 2, 1])
-        with col_d2:
-            ref_date_input = st.date_input("📅 Mês de Extração / Data de Referência", datetime.now(), key="reports_ref_date_picker")
-            ref_date_str = ref_date_input.strftime("%Y-%m-%d")
-        
+        st.markdown("Relatórios gerenciais dinâmicos filtrados conforme suas permissões de acesso.")
         st.markdown("---")
         
         # Dicionário de Metadados do Catálogo de Dados
@@ -632,63 +621,73 @@ if "reports" in tab_dict:
             }
         }
 
-        # Mapeamento completo de relatórios padrão do sistema
-        standard_reports_map = {
-            "Filiados_Ativos": ("🔵 Filiados Ativos", "Filiados_Ativos", lambda: report_manager.get_filiados_ativos(ref_date_str), "Filiados_Ativos"),
-            "Novos_Filiados_30D": ("🔵 Novos Filiados (30D)", "Novos_Filiados_30D", lambda: report_manager.get_novos_filiados_30_dias(ref_date_str), "Novos_Filiados_30D"),
-            "Renovados_90D": ("🔵 Filiados Renovados (90D)", "Filiados_Renovados_90D", lambda: report_manager.get_filiados_renovados_90_dias(ref_date_str), "Renovados_90D"),
-            "Filiados_1_Trimestre": ("🔵 1º Trimestre (3M)", "Filiados_1_Trimestre", lambda: report_manager.get_filiados_1_trimestre(ref_date_str), "Filiados_1_Trimestre"),
-            "Filiados_1_Semestre": ("🔵 1º Semestre (6M)", "Filiados_1_Semestre", lambda: report_manager.get_filiados_1_semestre(ref_date_str), "Filiados_1_Semestre"),
-            "Aniversariantes_Filiacao": ("🔵 Aniversariantes de Filiação", "Aniversariantes", lambda: report_manager.get_aniversariantes_filiacao(ref_date_str), "Aniversariantes_Filiacao"),
-            "Desfilia_Prox_30D": ("⚠️ A Vencer nos Próximos 30D", "Desfilia_Prox_30D", lambda: report_manager.get_desfiliacao_prox_30_dias(ref_date_str), "Desfilia_Prox_30D"),
-            "Desfilia_Prox_90D": ("⚠️ A Vencer nos Próximos 90D", "Desfilia_Prox_90D", lambda: report_manager.get_desfiliacao_prox_90_dias(ref_date_str), "Desfilia_Prox_90D"),
-            "Desfiliados_30D": ("⚠️ Desfiliados nos Últimos 30D", "Desfiliados_30D", lambda: report_manager.get_desfiliados_30_dias(ref_date_str), "Desfiliados_30D"),
-            "Certificados_3_Meses": ("🎓 Certificados (Últimos 3M)", "Certificados_3_Meses", lambda: report_manager.get_certificados_ultimos_3_meses(ref_date_str), "Certificados_3_Meses"),
-            "Certificacoes_Expirando_Mes": ("🎓 Certificações Expirando no Mês", "Certificacoes_Expirando_Mes", lambda: report_manager.get_certificacoes_expirando_mes(ref_date_str), "Certificacoes_Expirando_Mes"),
-            "Voluntarios_Ativos": ("🤝 Voluntários Ativos", "Voluntarios_Ativos", lambda: report_manager.get_voluntarios_filtrados(), "Voluntarios_Ativos")
-        }
+        col_nav, col_content = st.columns([1, 3])
 
-        # Carrega relatórios customizados salvos no banco
-        custom_reports_df = db_manager.list_custom_reports()
-        custom_reports_map = {}
-        if not custom_reports_df.empty:
-            for _, crow in custom_reports_df.iterrows():
-                cid = str(crow["report_id"])
-                cname = str(crow["report_name"])
-                csql = str(crow["sql_query"])
-                c_key = f"custom_{cid}"
-                
-                def make_custom_func(sql):
-                    return lambda: db_manager.execute_query(sql)
-                
-                custom_reports_map[c_key] = (f"📊 {cname}", f"Custom_{cname.replace(' ', '_')}", make_custom_func(csql), c_key)
+        with col_nav:
+            st.markdown("#### 📅 Mês de Extração")
+            ref_date_input = st.date_input(
+                "Data de Referência",
+                datetime.now(),
+                key="reports_ref_date_picker",
+                label_visibility="collapsed"
+            )
+            ref_date_str = ref_date_input.strftime("%Y-%m-%d")
+            st.markdown("---")
 
-        # Une todos os relatórios disponíveis
-        all_available_reports_map = {**standard_reports_map, **custom_reports_map}
+            # Mapeamento completo de relatórios padrão do sistema
+            standard_reports_map = {
+                "Filiados_Ativos": ("🔵 Filiados Ativos", "Filiados_Ativos", lambda: report_manager.get_filiados_ativos(ref_date_str), "Filiados_Ativos"),
+                "Novos_Filiados_30D": ("🔵 Novos Filiados (30D)", "Novos_Filiados_30D", lambda: report_manager.get_novos_filiados_30_dias(ref_date_str), "Novos_Filiados_30D"),
+                "Renovados_90D": ("🔵 Filiados Renovados (90D)", "Filiados_Renovados_90D", lambda: report_manager.get_filiados_renovados_90_dias(ref_date_str), "Renovados_90D"),
+                "Filiados_1_Trimestre": ("🔵 1º Trimestre (3M)", "Filiados_1_Trimestre", lambda: report_manager.get_filiados_1_trimestre(ref_date_str), "Filiados_1_Trimestre"),
+                "Filiados_1_Semestre": ("🔵 1º Semestre (6M)", "Filiados_1_Semestre", lambda: report_manager.get_filiados_1_semestre(ref_date_str), "Filiados_1_Semestre"),
+                "Aniversariantes_Filiacao": ("🔵 Aniversariantes de Filiação", "Aniversariantes", lambda: report_manager.get_aniversariantes_filiacao(ref_date_str), "Aniversariantes_Filiacao"),
+                "Desfilia_Prox_30D": ("⚠️ A Vencer nos Próximos 30D", "Desfilia_Prox_30D", lambda: report_manager.get_desfiliacao_prox_30_dias(ref_date_str), "Desfilia_Prox_30D"),
+                "Desfilia_Prox_90D": ("⚠️ A Vencer nos Próximos 90D", "Desfilia_Prox_90D", lambda: report_manager.get_desfiliacao_prox_90_dias(ref_date_str), "Desfilia_Prox_90D"),
+                "Desfiliados_30D": ("⚠️ Desfiliados nos Últimos 30D", "Desfiliados_30D", lambda: report_manager.get_desfiliados_30_dias(ref_date_str), "Desfiliados_30D"),
+                "Certificados_3_Meses": ("🎓 Certificados (Últimos 3M)", "Certificados_3_Meses", lambda: report_manager.get_certificados_ultimos_3_meses(ref_date_str), "Certificados_3_Meses"),
+                "Certificacoes_Expirando_Mes": ("🎓 Certificações Expirando no Mês", "Certificacoes_Expirando_Mes", lambda: report_manager.get_certificacoes_expirando_mes(ref_date_str), "Certificacoes_Expirando_Mes"),
+                "Voluntarios_Ativos": ("🤝 Voluntários Ativos", "Voluntarios_Ativos", lambda: report_manager.get_voluntarios_filtrados(), "Voluntarios_Ativos")
+            }
 
-        # Filtra relatórios com base nas permissões do usuário
-        user_allowed_keys = []
-        if role == "admin":
-            user_allowed_keys = list(all_available_reports_map.keys())
-        else:
-            raw_allowed = user.get("allowed_reports")
-            if raw_allowed:
-                try:
-                    user_allowed_keys = json.loads(raw_allowed)
-                except Exception:
-                    user_allowed_keys = []
-            else:
+            # Carrega relatórios customizados salvos no banco
+            custom_reports_df = db_manager.list_custom_reports()
+            custom_reports_map = {}
+            if not custom_reports_df.empty:
+                for _, crow in custom_reports_df.iterrows():
+                    cid = str(crow["report_id"])
+                    cname = str(crow["report_name"])
+                    csql = str(crow["sql_query"])
+                    c_key = f"custom_{cid}"
+                    
+                    def make_custom_func(sql):
+                        return lambda: db_manager.execute_query(sql)
+                    
+                    custom_reports_map[c_key] = (f"📊 {cname}", f"Custom_{cname.replace(' ', '_')}", make_custom_func(csql), c_key)
+
+            # Une todos os relatórios disponíveis
+            all_available_reports_map = {**standard_reports_map, **custom_reports_map}
+
+            # Filtra relatórios com base nas permissões do usuário
+            user_allowed_keys = []
+            if role == "admin":
                 user_allowed_keys = list(all_available_reports_map.keys())
+            else:
+                raw_allowed = user.get("allowed_reports")
+                if raw_allowed:
+                    try:
+                        user_allowed_keys = json.loads(raw_allowed)
+                    except Exception:
+                        user_allowed_keys = []
+                else:
+                    user_allowed_keys = list(all_available_reports_map.keys())
 
-        # Filtra tuplas ativas
-        active_reports = [all_available_reports_map[k] for k in user_allowed_keys if k in all_available_reports_map]
+            # Filtra tuplas ativas
+            active_reports = [all_available_reports_map[k] for k in user_allowed_keys if k in all_available_reports_map]
 
-        if not active_reports:
-            st.warning("⚠️ Seu usuário ainda não possui relatórios autorizados. Entre em contato com o Administrador do sistema.")
-        else:
-            col_nav, col_content = st.columns([1, 3])
-            
-            with col_nav:
+            if not active_reports:
+                st.warning("⚠️ Seu usuário não possui relatórios autorizados.")
+            else:
                 st.markdown("#### 📌 Escolha o Relatório")
                 selected_report_idx = st.radio(
                     "Selecione o Relatório:",
@@ -697,22 +696,51 @@ if "reports" in tab_dict:
                     key="vertical_report_radio_selector"
                 )
 
-            with col_content:
+        with col_content:
+            if active_reports:
                 title, filename, func, report_key = active_reports[selected_report_idx]
                 try:
                     df = func()
                     
-                    st.markdown(f"### {title}")
-                    st.markdown(f"**Total de registros encontrados:** {len(df)}")
+                    # Cabeçalho Compacto: Título + Downloads na Mesma Linha
+                    col_t1, col_t2 = st.columns([2, 1])
+                    with col_t1:
+                        st.markdown(f"### {title}")
+                        st.markdown(f"**Total de registros encontrados:** `{len(df)}`")
+                    with col_t2:
+                        c_dl1, c_dl2 = st.columns(2)
+                        with c_dl1:
+                            st.download_button(
+                                "⬇️ CSV",
+                                data=df.to_csv(index=False).encode('utf-8'),
+                                file_name=f"{filename}_{ref_date_str}.csv",
+                                mime="text/csv",
+                                type="primary",
+                                key=f"dl_csv_{selected_report_idx}_{filename}",
+                                use_container_width=True
+                            )
+                        with c_dl2:
+                            bio = tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx')
+                            df.to_excel(bio.name, index=False)
+                            with open(bio.name, "rb") as f:
+                                st.download_button(
+                                    "⬇️ Excel",
+                                    data=f.read(),
+                                    file_name=f"{filename}_{ref_date_str}.xlsx",
+                                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                    type="primary",
+                                    key=f"dl_xlsx_{selected_report_idx}_{filename}",
+                                    use_container_width=True
+                                )
                     
-                    # Card Informativo de Metadados do Catálogo de Dados
+                    # Card Informativo de Metadados do Catálogo de Dados (Fechado por Padrão)
                     meta_item = report_meta_info.get(report_key, {
                         "categoria": "📊 Relatórios Customizados",
                         "descricao": "Consulta SQL personalizada criada no Console.",
                         "projetos": "Análises sob demanda e relatórios Ad-Hoc da Diretoria."
                     })
                     
-                    with st.expander("📖 Dicionário de Dados & Informações do Catálogo", expanded=True):
+                    with st.expander("📖 Dicionário de Dados & Informações do Catálogo", expanded=False):
                         col_m1, col_m2 = st.columns(2)
                         with col_m1:
                             st.markdown(f"**📂 Categoria:** {meta_item['categoria']}")
@@ -727,34 +755,11 @@ if "reports" in tab_dict:
                                 perm_text = f"👤 {user.get('full_name', 'Usuário')} ({user.get('email')}) — Permissão Ativa ✅"
                             st.markdown(f"**🔒 Quem Tem Acesso:** {perm_text}")
 
-                    # Botões de Download acima da tabela de dados
-                    c1, c2 = st.columns(2)
-                    with c1:
-                        st.download_button(
-                            f"⬇️ Baixar CSV - {filename}",
-                            data=df.to_csv(index=False).encode('utf-8'),
-                            file_name=f"{filename}_{ref_date_str}.csv",
-                            mime="text/csv",
-                            type="primary",
-                            key=f"dl_csv_{selected_report_idx}_{filename}"
-                        )
-                    with c2:
-                        bio = tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx')
-                        df.to_excel(bio.name, index=False)
-                        with open(bio.name, "rb") as f:
-                            st.download_button(
-                                f"⬇️ Baixar Excel - {filename}",
-                                data=f.read(),
-                                file_name=f"{filename}_{ref_date_str}.xlsx",
-                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                type="primary",
-                                key=f"dl_xlsx_{selected_report_idx}_{filename}"
-                            )
-                    
                     st.markdown("---")
                     st.dataframe(df, use_container_width=True)
                 except Exception as err:
                     st.error(f"Erro ao carregar o relatório '{title}': {err}")
+
 
 
 # ==============================================================================
