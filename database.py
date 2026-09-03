@@ -16,19 +16,16 @@ except Exception:
 class DatabaseManager:
     def __init__(self, connection_string: Optional[str] = None):
         """
-        Inicializa o gerenciador de banco de dados.
-        Suporta o banco PostgreSQL hospedado no Supabase nativamente via:
-        - SUPABASE_DB_URL / DATABASE_URL / POSTGRES_URL
-        - Variáveis individuais (SUPABASE_PROJECT_REF, SUPABASE_DB_PASSWORD, PGHOST, etc.)
-        - Fallback resiliente para SQLite ('voluntariado.db') se sem credenciais ativas.
+        Inicializa o gerenciador de banco de dados nativo do Supabase (PostgreSQL).
+        Carrega a conexão a partir de:
+        1. Parâmetro explícito ou variáveis de ambiente (SUPABASE_DB_URL, DATABASE_URL, POSTGRES_URL)
+        2. Streamlit Secrets (st.secrets["SUPABASE_DB_URL"])
+        3. Variáveis de ambiente individuais (PGHOST, PGPASSWORD, etc.)
         """
-        # 1. Tenta pegar de parâmetro explícito ou variáveis de ambiente
         self.connection_string = connection_string or os.getenv("SUPABASE_DB_URL") or os.getenv("DATABASE_URL") or os.getenv("POSTGRES_URL")
         
-        # 2. Tenta pegar de st.secrets do Streamlit (Streamlit Cloud ou .streamlit/secrets.toml)
         if not self.connection_string:
             try:
-                import streamlit as st
                 if hasattr(st, "secrets"):
                     if "SUPABASE_DB_URL" in st.secrets:
                         self.connection_string = st.secrets["SUPABASE_DB_URL"]
@@ -40,13 +37,7 @@ class DatabaseManager:
             except Exception:
                 pass
 
-        self.is_postgres = False
-        
-        # Verifica se forneceu URL direta do Supabase/Postgres
-        if self.connection_string and ("postgresql" in self.connection_string or "postgres" in self.connection_string or "supabase" in self.connection_string):
-            self.is_postgres = True
-        else:
-            # Verifica se possui variáveis do Supabase
+        if not self.connection_string:
             supabase_ref = os.getenv("SUPABASE_PROJECT_REF")
             supabase_pass = os.getenv("SUPABASE_DB_PASSWORD") or os.getenv("PGPASSWORD")
             pghost = os.getenv("PGHOST") or (f"db.{supabase_ref}.supabase.co" if supabase_ref else None)
@@ -56,28 +47,17 @@ class DatabaseManager:
             
             if pghost and supabase_pass:
                 self.connection_string = f"postgresql://{pguser}:{supabase_pass}@{pghost}:{pgport}/{pgdb}"
-                self.is_postgres = True
-            else:
-                self.db_file = os.getenv("SQLITE_DB_PATH", "voluntariado.db")
-                self.is_postgres = False
+
+        self.is_postgres = True
 
     def update_connection(self, connection_string: str):
-        """
-        Permite atualizar a string de conexão em tempo de execução (ex: via UI do Streamlit).
-        """
+        """Atualiza a string de conexão do Supabase em tempo de execução."""
         self.connection_string = connection_string
-        if "postgresql" in connection_string or "postgres" in connection_string or "supabase" in connection_string:
-            self.is_postgres = True
-        else:
-            self.is_postgres = False
+        self.is_postgres = True
 
     def get_connection(self):
-        if self.is_postgres:
-            return psycopg2.connect(self.connection_string)
-        else:
-            conn = sqlite3.connect(self.db_file)
-            conn.row_factory = sqlite3.Row
-            return conn
+        """Retorna uma conexão ativa com o banco PostgreSQL no Supabase."""
+        return psycopg2.connect(self.connection_string)
 
     @staticmethod
     def hash_password(password: str) -> str:
@@ -87,7 +67,7 @@ class DatabaseManager:
 
     def init_db(self, schema_file: str = "schema.sql"):
         """
-        Executa o DDL de criação das tabelas se elas não existirem e insere os usuários padrão.
+        Executa o DDL de criação das tabelas no Supabase se elas não existirem e insere os usuários padrão.
         """
         if not os.path.exists(schema_file):
             return
@@ -98,27 +78,20 @@ class DatabaseManager:
         conn = self.get_connection()
         try:
             cur = conn.cursor()
-            if self.is_postgres:
-                # No Postgres, garante CREATE TABLE IF NOT EXISTS e SERIAL PRIMARY KEY
-                pg_script = sql_script.replace("CREATE TABLE ", "CREATE TABLE IF NOT EXISTS ")
-                pg_script = pg_script.replace("INTEGER PRIMARY KEY AUTOINCREMENT", "SERIAL PRIMARY KEY")
-                
-                # Executa instrução por instrução isoladamente com rollback individual se já existir
-                statements = [s.strip() for s in pg_script.split(";") if s.strip()]
-                for stmt in statements:
-                    try:
-                        cur.execute(stmt)
-                        conn.commit()
-                    except Exception:
-                        conn.rollback()
-            else:
-                sqlite_script = sql_script.replace("SERIAL PRIMARY KEY", "INTEGER PRIMARY KEY AUTOINCREMENT")
-                sqlite_script = sqlite_script.replace("CREATE TABLE ", "CREATE TABLE IF NOT EXISTS ")
-                cur.executescript(sqlite_script)
-                conn.commit()
+            pg_script = sql_script.replace("CREATE TABLE ", "CREATE TABLE IF NOT EXISTS ")
+            pg_script = pg_script.replace("INTEGER PRIMARY KEY AUTOINCREMENT", "SERIAL PRIMARY KEY")
+            
+            # Executa instrução por instrução isoladamente com rollback individual se já existir
+            statements = [s.strip() for s in pg_script.split(";") if s.strip()]
+            for stmt in statements:
+                try:
+                    cur.execute(stmt)
+                    conn.commit()
+                except Exception:
+                    conn.rollback()
             cur.close()
 
-            # Migração graciosa de colunas individuais para bancos já existentes
+            # Migração graciosa de colunas individuais
             for alter_sql in [
                 "ALTER TABLE membership ADD COLUMN tenureinyears NUMERIC;",
                 "ALTER TABLE person ADD COLUMN alternativeemail VARCHAR;",
