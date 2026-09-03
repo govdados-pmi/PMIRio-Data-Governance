@@ -330,7 +330,7 @@ class ReportManager:
 
     def get_aniversariantes_filiacao(self, ref_date: str = None) -> pd.DataFrame:
         """
-        Aniversariantes de filiação ativos (enddateforterm >= data de referência) 
+        Aniversariantes de filiação ativos (startdateforterm <= ref_date <= enddateforterm) 
         cujo originaljoindate faz aniversário no mês da data de extração.
         """
         dt_ref = self.get_ref_date(ref_date)
@@ -347,8 +347,7 @@ class ReportManager:
             m.enddateforterm,
             m.plannameforchapters,
             m.autorenewstatus,
-            p.primaryphone,
-            m.tenureinyears
+            p.primaryphone
         FROM membership m
         JOIN person p ON p.personid = m.personid
         WHERE m.startdateforterm <= %s AND m.enddateforterm >= %s AND m.originaljoindate IS NOT NULL;
@@ -363,8 +362,7 @@ class ReportManager:
             m.enddateforterm,
             m.plannameforchapters,
             m.autorenewstatus,
-            p.primaryphone,
-            m.tenureinyears
+            p.primaryphone
         FROM membership m
         JOIN person p ON p.personid = m.personid
         WHERE m.startdateforterm <= ? AND m.enddateforterm >= ? AND m.originaljoindate IS NOT NULL;
@@ -375,16 +373,16 @@ class ReportManager:
             return df
         
         df['originaljoindate_dt'] = pd.to_datetime(df['originaljoindate'], errors='coerce')
-        df['idade_de_filiacao'] = dt_ref.year - df['originaljoindate_dt'].dt.year
+        df['aniversario_de_filiacao'] = dt_ref.year - df['originaljoindate_dt'].dt.year
         lista_marcos = [1, 3, 5, 10, 15, 20, 25]
         
         # Filtra filiados ativos no mês de aniversário e completando marcos de anos
         df_filtered = df[
             (df['originaljoindate_dt'].dt.month == dt_ref.month) &
-            (df['idade_de_filiacao'].isin(lista_marcos))
+            (df['aniversario_de_filiacao'].isin(lista_marcos))
         ].copy()
         
-        df_filtered = df_filtered.drop(columns=['originaljoindate_dt', 'idade_de_filiacao'])
+        df_filtered = df_filtered.drop(columns=['originaljoindate_dt'])
         return df_filtered.sort_values(by='originaljoindate', ignore_index=True)
 
     def get_certificados_ultimos_3_meses(self, ref_date: str = None) -> pd.DataFrame:
