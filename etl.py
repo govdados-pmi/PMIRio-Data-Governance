@@ -360,8 +360,8 @@ class ETLPipeline:
                 persons_inserted = len(new_persons_batch)
 
             if history_batch:
-                hist_pg = "INSERT INTO person_history (personid, field_name, old_value, new_value) VALUES %s;"
-                hist_sqlite = "INSERT INTO person_history (personid, field_name, old_value, new_value) VALUES (%s, %s, %s, %s);"
+                hist_pg = "INSERT INTO person_history (personid, field_changed, old_value, new_value) VALUES %s;"
+                hist_sqlite = "INSERT INTO person_history (personid, field_changed, old_value, new_value) VALUES (%s, %s, %s, %s);"
                 fast_batch_insert(cur, hist_pg, hist_sqlite, history_batch, page_size=5000)
                 history_records_created = len(history_batch)
 
