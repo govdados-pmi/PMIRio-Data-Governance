@@ -432,9 +432,19 @@ if "etl" in tab_dict:
                     if vols:
                         vol_path = vols[0]
 
+                import time
+                t_start = time.time()
+                progress_bar = st.progress(10, text="⚡ Processando Filiados...")
+
                 res_m = pipeline.process_members(member_paths) if member_paths else {"status": "skipped"}
+                progress_bar.progress(50, text="⚡ Processando Certificações...")
+
                 res_c = pipeline.process_certifications(cert_paths) if cert_paths else {"status": "skipped"}
+                progress_bar.progress(85, text="⚡ Processando Voluntários...")
+
                 res_v = pipeline.process_volunteers(vol_path) if vol_path else {"status": "skipped"}
+                progress_bar.progress(100, text="Concluído!")
+                t_elapsed = round(time.time() - t_start, 2)
 
                 has_error = False
                 if res_m.get("status") == "error":
@@ -448,7 +458,8 @@ if "etl" in tab_dict:
                     has_error = True
 
                 if not has_error:
-                    st.success("🎉 Pipeline executado com sucesso!")
+                    st.success(f"🎉 Pipeline executado com sucesso em **{t_elapsed} segundos**!")
+
                     m1, m2, m3, m4, m5, m6 = st.columns(6)
                     with m1:
                         st.metric("Pessoas Criadas", res_m.get("persons_inserted", 0))

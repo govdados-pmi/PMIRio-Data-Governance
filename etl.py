@@ -35,20 +35,32 @@ def normalize_col_name(s) -> str:
 
 def auto_read_excel(file_path: str) -> pd.DataFrame:
     """
-    Lê um arquivo Excel do ThoughtSpot tentando encontrar a linha de cabeçalho correta (header).
-    O ThoughtSpot costuma inserir linhas de título no início dos exports.
+    Lê um arquivo Excel do ThoughtSpot encontrando a linha de cabeçalho (header) em milissegundos
+    e utilizando a engine 'calamine' de alta performance se disponível.
     """
-    for h in range(15):
+    engine = 'calamine'
+    try:
+        df_top = pd.read_excel(file_path, nrows=15, header=None, engine=engine)
+    except Exception:
+        engine = None
         try:
-            df = pd.read_excel(file_path, header=h)
-            named_cols = [c for c in df.columns if not str(c).startswith("Unnamed")]
-            if len(named_cols) >= 3:
-                cols_str = " ".join([normalize_col_name(c) for c in named_cols])
-                if any(k in cols_str for k in ["personid", "email", "applicants", "certification", "certificacao", "originaljoindate", "startdateforterm"]):
-                    return df
+            df_top = pd.read_excel(file_path, nrows=15, header=None)
         except Exception:
-            pass
-    return pd.read_excel(file_path)
+            df_top = None
+
+    target_header = 0
+    if df_top is not None:
+        for h_idx, row in df_top.iterrows():
+            named_vals = [val for val in row.values if pd.notna(val) and not str(val).startswith('Unnamed')]
+            if len(named_vals) >= 3:
+                row_str = ' '.join([normalize_col_name(val) for val in named_vals])
+                if any(k in row_str for k in ["personid", "email", "applicants", "certification", "certificacao", "originaljoindate", "startdateforterm"]):
+                    target_header = h_idx
+                    break
+
+    kwargs = {'engine': engine} if engine else {}
+    return pd.read_excel(file_path, header=target_header, **kwargs)
+
 
 
 
@@ -340,19 +352,21 @@ class ETLPipeline:
                             "address": p["address"] if p["address"] else old_p["address"]
                         }
 
-            # Executa inserções e atualizações em lote (chunking para performance na nuvem)
-            batch_size = 1000
+            # Executa inserções e atualizações em lote de alta performance (fast_batch_insert)
             if new_persons_batch:
-                for i in range(0, len(new_persons_batch), batch_size):
-                    cur.executemany(insert_person_sql, new_persons_batch[i:i + batch_size])
+                person_pg = "INSERT INTO person (personid, fullname, primaryemail, primaryphone, primaryaddress, industry, jobtittle, primaryzip, primarycity, alternativeemail) VALUES %s ON CONFLICT (personid) DO NOTHING;"
+                person_sqlite = "INSERT INTO person (personid, fullname, primaryemail, primaryphone, primaryaddress, industry, jobtittle, primaryzip, primarycity, alternativeemail) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (personid) DO NOTHING;"
+                fast_batch_insert(cur, person_pg, person_sqlite, new_persons_batch, page_size=5000)
                 persons_inserted = len(new_persons_batch)
 
             if history_batch:
-                for i in range(0, len(history_batch), batch_size):
-                    cur.executemany(insert_history_sql, history_batch[i:i + batch_size])
+                hist_pg = "INSERT INTO person_history (personid, field_name, old_value, new_value) VALUES %s;"
+                hist_sqlite = "INSERT INTO person_history (personid, field_name, old_value, new_value) VALUES (%s, %s, %s, %s);"
+                fast_batch_insert(cur, hist_pg, hist_sqlite, history_batch, page_size=5000)
                 history_records_created = len(history_batch)
 
             if update_persons_batch:
+                batch_size = 1000
                 for i in range(0, len(update_persons_batch), batch_size):
                     cur.executemany(update_person_sql, update_persons_batch[i:i + batch_size])
                 persons_updated = len(update_persons_batch)
@@ -360,11 +374,6 @@ class ETLPipeline:
             # 2. Processa tabela MEMBERSHIP em lote (Incremental por personid + startdateforterm)
             cur.execute("SELECT personid, startdateforterm FROM membership WHERE startdateforterm IS NOT NULL;")
             existing_memberships = set((row[0], str(row[1])) for row in cur.fetchall())
-
-            insert_membership_sql = f"""
-            INSERT INTO membership (personid, originaljoindate, startdateforterm, enddateforterm, plannameforchapters, autorenewstatus, issinglemembership, isreceiveelectronicnotifications, tenureinyears)
-            VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder});
-            """
 
             new_memberships_batch = []
 
@@ -420,10 +429,11 @@ class ETLPipeline:
                     existing_memberships.add(m_key)
 
             if new_memberships_batch:
-                batch_size = 1000
-                for i in range(0, len(new_memberships_batch), batch_size):
-                    cur.executemany(insert_membership_sql, new_memberships_batch[i:i + batch_size])
+                memb_pg = "INSERT INTO membership (personid, originaljoindate, startdateforterm, enddateforterm, plannameforchapters, autorenewstatus, issinglemembership, isreceiveelectronicnotifications, tenureinyears) VALUES %s;"
+                memb_sqlite = "INSERT INTO membership (personid, originaljoindate, startdateforterm, enddateforterm, plannameforchapters, autorenewstatus, issinglemembership, isreceiveelectronicnotifications, tenureinyears) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s);"
+                fast_batch_insert(cur, memb_pg, memb_sqlite, new_memberships_batch, page_size=5000)
                 memberships_inserted = len(new_memberships_batch)
+
 
             conn.commit()
 
@@ -725,11 +735,10 @@ class ETLPipeline:
 
             cur.execute("DELETE FROM voluntary;")
 
-            vol_sql = f"""
-            INSERT INTO voluntary (personid, applicants, opportunity_name, application_status, opportunity_description, email_address, application_service_start_date, application_service_end_date)
-            VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder});
-            """
+            vol_pg = "INSERT INTO voluntary (personid, applicants, opportunity_name, application_status, opportunity_description, email_address, application_service_start_date, application_service_end_date) VALUES %s;"
+            vol_sqlite = "INSERT INTO voluntary (personid, applicants, opportunity_name, application_status, opportunity_description, email_address, application_service_start_date, application_service_end_date) VALUES (%s, %s, %s, %s, %s, %s, %s, %s);"
 
+            vol_tuples = []
             for idx, row in df.iterrows():
                 pid = clean_int(row.get('personid'))
                 if not pid:
@@ -747,10 +756,14 @@ class ETLPipeline:
                     start_dt,
                     end_dt
                 )
-                cur.execute(vol_sql, v_tuple)
-                vols_inserted += 1
+                vol_tuples.append(v_tuple)
+
+            if vol_tuples:
+                fast_batch_insert(cur, vol_pg, vol_sqlite, vol_tuples, page_size=5000)
+                vols_inserted = len(vol_tuples)
 
             conn.commit()
+
             return {
                 "status": "success", 
                 "volunteers_inserted": vols_inserted,
