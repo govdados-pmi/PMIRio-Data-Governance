@@ -47,14 +47,15 @@ st.markdown("""
     
     /* Estilo do Header Principal */
     .main-title {
-        font-size: 2.1rem;
+        font-size: 2.2rem;
         font-weight: 700;
-        color: #461DA3;
-        background: linear-gradient(90deg, #270F53 0%, #461DA3 50%, #6CBEDE 100%);
+        color: #270F53;
+        background: linear-gradient(135deg, #1F0B46 0%, #461DA3 100%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
-        margin-bottom: 0.1rem;
+        margin-bottom: 0.2rem;
         letter-spacing: -0.5px;
+        line-height: 1.2;
     }
     .sub-title {
         font-size: 0.98rem;

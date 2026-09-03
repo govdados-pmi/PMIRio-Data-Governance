@@ -42,7 +42,7 @@ class ReportManager:
             m.tenureinyears
         FROM membership m
         JOIN person p ON p.personid = m.personid
-        WHERE m.enddateforterm >= %s
+        WHERE m.startdateforterm <= %s AND m.enddateforterm >= %s
         ORDER BY m.enddateforterm DESC;
         """ if db_manager.is_postgres else """
         SELECT 
@@ -60,11 +60,12 @@ class ReportManager:
             m.tenureinyears
         FROM membership m
         JOIN person p ON p.personid = m.personid
-        WHERE m.enddateforterm >= ?
+        WHERE m.startdateforterm <= ? AND m.enddateforterm >= ?
         ORDER BY m.enddateforterm DESC;
         """
         
-        df = db_manager.execute_query(query, (dt_ref.strftime("%Y-%m-%d"),))
+        ref_str = dt_ref.strftime("%Y-%m-%d")
+        df = db_manager.execute_query(query, (ref_str, ref_str))
         return df
 
     def get_novos_filiados_30_dias(self, ref_date: str = None) -> pd.DataFrame:
@@ -350,7 +351,7 @@ class ReportManager:
             m.tenureinyears
         FROM membership m
         JOIN person p ON p.personid = m.personid
-        WHERE m.enddateforterm >= %s AND m.originaljoindate IS NOT NULL;
+        WHERE m.startdateforterm <= %s AND m.enddateforterm >= %s AND m.originaljoindate IS NOT NULL;
         """ if db_manager.is_postgres else """
         SELECT 
             p.personid,
@@ -366,10 +367,10 @@ class ReportManager:
             m.tenureinyears
         FROM membership m
         JOIN person p ON p.personid = m.personid
-        WHERE m.enddateforterm >= ? AND m.originaljoindate IS NOT NULL;
+        WHERE m.startdateforterm <= ? AND m.enddateforterm >= ? AND m.originaljoindate IS NOT NULL;
         """
         
-        df = db_manager.execute_query(query, (ref_str,))
+        df = db_manager.execute_query(query, (ref_str, ref_str))
         if df.empty:
             return df
         
