@@ -524,8 +524,8 @@ class ETLPipeline:
 
         try:
             # Upsert na tabela PERSON em lote para garantir foreign key
-            person_sql_pg = "INSERT INTO person (personid, fullname, primaryemail, primaryphone) VALUES %s ON CONFLICT (personid) DO UPDATE SET fullname = EXCLUDED.fullname;"
-            person_sql_sqlite = "INSERT INTO person (personid, fullname, primaryemail, primaryphone) VALUES (%s, %s, %s, %s) ON CONFLICT (personid) DO UPDATE SET fullname = excluded.fullname;"
+            person_sql_pg = "INSERT INTO person (personid, fullname, primaryemail, primaryphone) VALUES %s ON CONFLICT (personid) DO UPDATE SET fullname = COALESCE(person.fullname, EXCLUDED.fullname), primaryemail = COALESCE(person.primaryemail, EXCLUDED.primaryemail), primaryphone = COALESCE(person.primaryphone, EXCLUDED.primaryphone);"
+            person_sql_sqlite = "INSERT INTO person (personid, fullname, primaryemail, primaryphone) VALUES (%s, %s, %s, %s) ON CONFLICT (personid) DO UPDATE SET fullname = COALESCE(person.fullname, excluded.fullname), primaryemail = COALESCE(person.primaryemail, excluded.primaryemail), primaryphone = COALESCE(person.primaryphone, excluded.primaryphone);"
 
             unique_person_tuples = {}
             for idx, row in df_combined.iterrows():
@@ -630,7 +630,7 @@ class ETLPipeline:
             c_low = col.lower()
             if "personid" in c_low or "id" == c_low:
                 cols_map[col] = "personid"
-            elif "applicants" in c_low or "nome" in c_low:
+            elif "applicants" in c_low or "nome" in c_low or "applicant" in c_low:
                 cols_map[col] = "applicants"
             elif "opportunity name" in c_low or "oportunidade" in c_low:
                 cols_map[col] = "opportunity_name"
@@ -644,14 +644,24 @@ class ETLPipeline:
                 cols_map[col] = "application_service_start_date"
             elif "end date" in c_low:
                 cols_map[col] = "application_service_end_date"
+            elif "phone" in c_low or "telefone" in c_low:
+                cols_map[col] = "primaryphone"
+            elif "address" in c_low or "endereco" in c_low:
+                cols_map[col] = "primaryaddress"
+            elif "city" in c_low or "cidade" in c_low:
+                cols_map[col] = "primarycity"
+            elif "zip" in c_low or "cep" in c_low:
+                cols_map[col] = "primaryzip"
 
         df = df.rename(columns=cols_map)
 
         # Regra do Notebook (Célula 103):
         # 1) Converter data para datetime
-        df['application_service_start_date'] = pd.to_datetime(df['application_service_start_date'], errors='coerce')
-        # 2) Ordenar do mais novo para o mais antigo
-        df = df.sort_values(by='application_service_start_date', ascending=False).reset_index(drop=True)
+        if 'application_service_start_date' in df.columns:
+            df['application_service_start_date'] = pd.to_datetime(df['application_service_start_date'], errors='coerce')
+            # 2) Ordenar do mais novo para o mais antigo
+            df = df.sort_values(by='application_service_start_date', ascending=False).reset_index(drop=True)
+
         # 3) Email minúsculo
         if 'email_address' in df.columns:
             df['email_address'] = df['email_address'].astype(str).str.lower().str.strip()
@@ -666,10 +676,46 @@ class ETLPipeline:
             df = df[df['application_status'] != 'Complete']
 
         vols_inserted = 0
+        persons_inserted = 0
         conn = db_manager.get_connection()
         cur = conn.cursor()
 
         try:
+            # 1. Upsert na tabela PERSON em lote para garantir foreign key
+            person_sql_pg = """
+            INSERT INTO person (personid, fullname, primaryemail, primaryphone) 
+            VALUES %s 
+            ON CONFLICT (personid) DO UPDATE SET 
+                fullname = COALESCE(person.fullname, EXCLUDED.fullname),
+                primaryemail = COALESCE(person.primaryemail, EXCLUDED.primaryemail),
+                primaryphone = COALESCE(person.primaryphone, EXCLUDED.primaryphone);
+            """
+            person_sql_sqlite = """
+            INSERT INTO person (personid, fullname, primaryemail, primaryphone) 
+            VALUES (%s, %s, %s, %s) 
+            ON CONFLICT (personid) DO UPDATE SET 
+                fullname = COALESCE(person.fullname, excluded.fullname),
+                primaryemail = COALESCE(person.primaryemail, excluded.primaryemail),
+                primaryphone = COALESCE(person.primaryphone, excluded.primaryphone);
+            """
+
+            unique_person_tuples = {}
+            for idx, row in df.iterrows():
+                pid = clean_int(row.get('personid'))
+                if not pid or pid in unique_person_tuples:
+                    continue
+                email = clean_str(row.get('email_address')) or clean_str(row.get('primaryemail'))
+                if email:
+                    email = email.lower()
+                name = clean_str(row.get('applicants')) or clean_str(row.get('fullname'))
+                phone = clean_str(row.get('primaryphone')) or clean_str(row.get('phone'))
+                unique_person_tuples[pid] = (pid, name, email, phone)
+
+            person_tuples = list(unique_person_tuples.values())
+            if person_tuples:
+                fast_batch_insert(cur, person_sql_pg, person_sql_sqlite, person_tuples, page_size=5000)
+                persons_inserted = len(person_tuples)
+
             cur.execute("DELETE FROM voluntary;")
 
             vol_sql = f"""
@@ -679,6 +725,8 @@ class ETLPipeline:
 
             for idx, row in df.iterrows():
                 pid = clean_int(row.get('personid'))
+                if not pid:
+                    continue
                 start_dt = clean_date(row.get('application_service_start_date'))
                 end_dt = clean_date(row.get('application_service_end_date'))
                 
@@ -696,7 +744,11 @@ class ETLPipeline:
                 vols_inserted += 1
 
             conn.commit()
-            return {"status": "success", "volunteers_inserted": vols_inserted}
+            return {
+                "status": "success", 
+                "volunteers_inserted": vols_inserted,
+                "persons_processed": persons_inserted
+            }
         except Exception as e:
             conn.rollback()
             return {"status": "error", "message": str(e)}

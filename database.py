@@ -5,7 +5,11 @@ from psycopg2.extras import RealDictCursor
 import pandas as pd
 import hashlib
 import streamlit as st
+import warnings
 from typing import Optional, Union, Any, Dict
+
+warnings.filterwarnings("ignore", category=UserWarning, message=".*pandas only supports SQLAlchemy.*")
+warnings.filterwarnings("ignore", category=UserWarning, message=".*DBAPI2.*")
 
 try:
     from dotenv import load_dotenv
@@ -111,9 +115,6 @@ class DatabaseManager:
         finally:
             conn.close()
 
-
-
-
     def authenticate_user(self, email: str, password: str) -> Optional[Dict[str, Any]]:
         """Valida e-mail e senha e retorna dicionário com os dados do usuário autenticado."""
         pwd_hash = self.hash_password(password)
@@ -178,9 +179,6 @@ class DatabaseManager:
         except Exception:
             return False
 
-    # =========================================================================
-    # RELATÓRIOS PERSONALIZADOS SALVOS VIA CONSOLE SQL
-    # =========================================================================
     def save_custom_report(self, report_name: str, sql_query: str, description: str = "", created_by: str = "") -> bool:
         """Salva uma consulta SQL como um novo relatório personalizado dinâmico."""
         placeholder = "%s" if self.is_postgres else "?"
@@ -219,23 +217,14 @@ class DatabaseManager:
             # Fallback direto sem cache se falhar
             conn = self.get_connection()
             try:
-                df = pd.read_sql_query(query, conn, params=params)
+                with warnings.catch_warnings():
+                    warnings.filterwarnings("ignore", category=UserWarning)
+                    df = pd.read_sql_query(query, conn, params=params)
                 if df.columns.duplicated().any():
                     df = df.loc[:, ~df.columns.duplicated(keep='first')]
                 return df
             finally:
                 conn.close()
-
-@st.cache_data(ttl=300, show_spinner=False)
-def _cached_query(db_identifier: str, query: str, params: Optional[tuple] = None) -> pd.DataFrame:
-    conn = db_manager.get_connection()
-    try:
-        df = pd.read_sql_query(query, conn, params=params)
-        if df.columns.duplicated().any():
-            df = df.loc[:, ~df.columns.duplicated(keep='first')]
-        return df
-    finally:
-        conn.close()
 
     def execute_non_query(self, sql: str, params: Optional[Union[tuple, dict]] = None):
         """
@@ -253,6 +242,20 @@ def _cached_query(db_identifier: str, query: str, params: Optional[tuple] = None
         finally:
             conn.close()
 
+@st.cache_data(ttl=300, show_spinner=False)
+def _cached_query(db_identifier: str, query: str, params: Optional[tuple] = None) -> pd.DataFrame:
+    conn = db_manager.get_connection()
+    try:
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=UserWarning)
+            df = pd.read_sql_query(query, conn, params=params)
+        if df.columns.duplicated().any():
+            df = df.loc[:, ~df.columns.duplicated(keep='first')]
+        return df
+    finally:
+        conn.close()
+
 # Instância padrão global
 db_manager = DatabaseManager()
+
 
