@@ -4,6 +4,7 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 import pandas as pd
 import hashlib
+import streamlit as st
 from typing import Optional, Union, Any, Dict
 
 try:
