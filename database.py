@@ -279,16 +279,31 @@ class DatabaseManager:
     def execute_query(self, query: str, params: Optional[Union[tuple, dict]] = None) -> pd.DataFrame:
         """
         Executa uma consulta SQL e retorna um DataFrame do Pandas.
-        Garante que nomes de colunas duplicados (oriundos de JOINs com SELECT *) sejam tratados com segurança.
+        Utiliza cache inteligente em memória por 5 minutos (ttl=300) para máxima velocidade no Streamlit.
         """
-        conn = self.get_connection()
         try:
-            df = pd.read_sql_query(query, conn, params=params)
-            if df.columns.duplicated().any():
-                df = df.loc[:, ~df.columns.duplicated(keep='first')]
-            return df
-        finally:
-            conn.close()
+            return _cached_query(self.connection_string or getattr(self, "db_file", "voluntariado.db"), query, params)
+        except Exception:
+            # Fallback direto sem cache se falhar
+            conn = self.get_connection()
+            try:
+                df = pd.read_sql_query(query, conn, params=params)
+                if df.columns.duplicated().any():
+                    df = df.loc[:, ~df.columns.duplicated(keep='first')]
+                return df
+            finally:
+                conn.close()
+
+@st.cache_data(ttl=300, show_spinner=False)
+def _cached_query(db_identifier: str, query: str, params: Optional[tuple] = None) -> pd.DataFrame:
+    conn = db_manager.get_connection()
+    try:
+        df = pd.read_sql_query(query, conn, params=params)
+        if df.columns.duplicated().any():
+            df = df.loc[:, ~df.columns.duplicated(keep='first')]
+        return df
+    finally:
+        conn.close()
 
     def execute_non_query(self, sql: str, params: Optional[Union[tuple, dict]] = None):
         """
