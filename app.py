@@ -538,9 +538,10 @@ if "db" in tab_dict:
                             st.success(f"Relatório '{cname}' excluído com sucesso!")
                             st.rerun()
 
-        # Explorador de Tabelas em Expander Fechado
+        # Explorador de Tabelas em Título Grande com Expander Fechado
         st.markdown("---")
-        with st.expander("🔍 Explorador de Tabelas Relacionais (Visualizar Dados Brutos)", expanded=False):
+        st.subheader("🔍 Explorador de Tabelas Relacionais (Visualizar Dados Brutos)")
+        with st.expander("👉 Clique aqui para abrir e consultar os registros das tabelas", expanded=False):
             table_choice = st.selectbox("Selecione a Tabela para Visualizar:", ["person", "membership", "person_history", "certification", "voluntary", "custom_report", "app_user"])
             try:
                 df_table = db_manager.execute_query(f"SELECT * FROM {table_choice} LIMIT 500;")
@@ -548,6 +549,7 @@ if "db" in tab_dict:
                 st.dataframe(df_table, use_container_width=True)
             except Exception as e:
                 st.error(f"Erro ao consultar tabela {table_choice}: {e}")
+
 
 
 # ==============================================================================
