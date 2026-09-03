@@ -3,10 +3,35 @@ import numpy as np
 import os
 import re
 import warnings
+import unicodedata
 from datetime import datetime
 from database import db_manager
+try:
+    from psycopg2.extras import execute_values
+except ImportError:
+    execute_values = None
 
 warnings.filterwarnings("ignore", category=UserWarning, module="openpyxl")
+
+def fast_batch_insert(cur, sql_postgres, sql_sqlite, data_tuples, page_size=5000):
+    if not data_tuples:
+        return
+    if db_manager.is_postgres and execute_values:
+        execute_values(cur, sql_postgres, data_tuples, page_size=page_size)
+    else:
+        placeholder = get_param_placeholder()
+        sql = sql_sqlite.replace("%s", placeholder)
+        for i in range(0, len(data_tuples), page_size):
+            cur.executemany(sql, data_tuples[i:i + page_size])
+
+
+def normalize_col_name(s) -> str:
+    """Normaliza o nome de colunas removendo acentos, espaços e caracteres especiais."""
+    if not s or pd.isna(s):
+        return ""
+    n = unicodedata.normalize('NFKD', str(s))
+    n = "".join([c for c in n if not unicodedata.combining(c)])
+    return n.lower().replace(" ", "").replace("_", "").replace("-", "").replace(".", "")
 
 def auto_read_excel(file_path: str) -> pd.DataFrame:
     """
@@ -16,12 +41,16 @@ def auto_read_excel(file_path: str) -> pd.DataFrame:
     for h in range(15):
         try:
             df = pd.read_excel(file_path, header=h)
-            cols_str = " ".join([str(c) for c in df.columns]).lower().replace(" ", "").replace("_", "")
-            if any(k in cols_str for k in ["personid", "email", "applicants", "certificationtypename", "originaljoindate", "startdateforterm"]):
-                return df
+            named_cols = [c for c in df.columns if not str(c).startswith("Unnamed")]
+            if len(named_cols) >= 3:
+                cols_str = " ".join([normalize_col_name(c) for c in named_cols])
+                if any(k in cols_str for k in ["personid", "email", "applicants", "certification", "certificacao", "originaljoindate", "startdateforterm"]):
+                    return df
         except Exception:
             pass
     return pd.read_excel(file_path)
+
+
 
 def montar_nome_completo(first, middle, last) -> str:
     """
@@ -121,7 +150,7 @@ class ETLPipeline:
         # Padroniza nomes de colunas de forma ultra flexível
         cols_map = {}
         for col in df_combined.columns:
-            c_clean = str(col).lower().replace(" ", "").replace("_", "")
+            c_clean = normalize_col_name(col)
             if "personid" in c_clean or c_clean == "id" or "person" in c_clean or "filiado" in c_clean:
                 cols_map[col] = "personid"
             elif "firstname" in c_clean or "primeironome" in c_clean:
@@ -162,6 +191,9 @@ class ETLPipeline:
                 cols_map[col] = "primarycity"
             elif "tenureinyears" in c_clean or "tenure" in c_clean:
                 cols_map[col] = "tenureinyears"
+            elif any(k in c_clean for k in ["certificationlist", "certificacoes", "certifications", "certification"]):
+                cols_map[col] = "certificationlist"
+
 
         df_combined = df_combined.rename(columns=cols_map)
         # Remove colunas duplicadas que tenham sido mapeadas com o mesmo nome
@@ -297,7 +329,7 @@ class ETLPipeline:
                     if not alt_email_to_save:
                         alt_email_to_save = p["alternativeemail"]
 
-                    if changed or p["fullname"]:
+                    if changed:
                         update_persons_batch.append((
                             p["fullname"], p["email"], p["phone"], p["address"],
                             p["industry"], p["jobtittle"], p["primaryzip"], p["primarycity"], alt_email_to_save, pid
@@ -308,17 +340,21 @@ class ETLPipeline:
                             "address": p["address"] if p["address"] else old_p["address"]
                         }
 
-            # Executa inserções e atualizações em lote
+            # Executa inserções e atualizações em lote (chunking para performance na nuvem)
+            batch_size = 1000
             if new_persons_batch:
-                cur.executemany(insert_person_sql, new_persons_batch)
+                for i in range(0, len(new_persons_batch), batch_size):
+                    cur.executemany(insert_person_sql, new_persons_batch[i:i + batch_size])
                 persons_inserted = len(new_persons_batch)
 
             if history_batch:
-                cur.executemany(insert_history_sql, history_batch)
+                for i in range(0, len(history_batch), batch_size):
+                    cur.executemany(insert_history_sql, history_batch[i:i + batch_size])
                 history_records_created = len(history_batch)
 
             if update_persons_batch:
-                cur.executemany(update_person_sql, update_persons_batch)
+                for i in range(0, len(update_persons_batch), batch_size):
+                    cur.executemany(update_person_sql, update_persons_batch[i:i + batch_size])
                 persons_updated = len(update_persons_batch)
 
             # 2. Processa tabela MEMBERSHIP em lote (Incremental por personid + startdateforterm)
@@ -384,10 +420,13 @@ class ETLPipeline:
                     existing_memberships.add(m_key)
 
             if new_memberships_batch:
-                cur.executemany(insert_membership_sql, new_memberships_batch)
+                batch_size = 1000
+                for i in range(0, len(new_memberships_batch), batch_size):
+                    cur.executemany(insert_membership_sql, new_memberships_batch[i:i + batch_size])
                 memberships_inserted = len(new_memberships_batch)
 
             conn.commit()
+
             return {
                 "status": "success",
                 "persons_inserted": persons_inserted,
@@ -396,6 +435,8 @@ class ETLPipeline:
                 "memberships_inserted": memberships_inserted,
                 "memberships_skipped": memberships_skipped
             }
+
+
         except Exception as e:
             conn.rollback()
             return {"status": "error", "message": str(e)}
@@ -421,22 +462,22 @@ class ETLPipeline:
         # Mapeamento de colunas ultra flexível
         cols_map = {}
         for col in df_combined.columns:
-            c_clean = str(col).lower().replace(" ", "").replace("_", "")
-            if "personid" in c_clean or c_clean == "id" or "person" in c_clean or "filiado" in c_clean:
+            c_clean = normalize_col_name(col)
+            if "personid" in c_clean or c_clean == "id" or "person" in c_clean or "filiado" in c_clean or "memberid" in c_clean:
                 cols_map[col] = "personid"
-            elif "certificationid" in c_clean:
+            elif "certificationid" in c_clean or "idcertificacao" in c_clean or "certificacaoid" in c_clean:
                 cols_map[col] = "certificationid"
-            elif "certificationtypename" in c_clean or "certificacao" in c_clean or "type" in c_clean:
+            elif any(k in c_clean for k in ["certificationtypename", "certificacao", "type", "nomecertificacao", "tipocertificacao"]):
                 cols_map[col] = "certificationtypename"
-            elif "originalgrantdate" in c_clean or "data_certificacao_original" in c_clean or "grantdate" in c_clean:
+            elif any(k in c_clean for k in ["originalgrantdate", "grantdate", "dataconcessao", "concessao", "dataoutorga", "outorga", "dategranted"]):
                 cols_map[col] = "originalgrantdate"
-            elif "effectivestartdate" in c_clean or "data_certificacao_atual" in c_clean or "startdate" in c_clean:
+            elif any(k in c_clean for k in ["effectivestartdate", "startdate", "datainicio", "inicio"]):
                 cols_map[col] = "effectivestartdate"
-            elif "effectiveenddate" in c_clean or "data_expiracao_certificacao" in c_clean or "enddate" in c_clean:
+            elif any(k in c_clean for k in ["effectiveenddate", "enddate", "dataexpiracao", "expiracao", "datafim", "fim"]):
                 cols_map[col] = "effectiveenddate"
-            elif "certificationstatusname" in c_clean or "status_certificacao" in c_clean or "status" in c_clean:
+            elif any(k in c_clean for k in ["certificationstatusname", "statuscertificacao", "status"]):
                 cols_map[col] = "certificationstatusname"
-            elif "totalcycleseqno" in c_clean or "cycleseqno" in c_clean or "qtde_ciclos" in c_clean or "ciclos" in c_clean:
+            elif any(k in c_clean for k in ["totalcycleseqno", "cycleseqno", "qtdeciclos", "ciclos"]):
                 cols_map[col] = "total_cycleseqno"
             elif "firstname" in c_clean or "primeironome" in c_clean:
                 cols_map[col] = "firstname"
@@ -482,40 +523,33 @@ class ETLPipeline:
         cur = conn.cursor()
 
         try:
-            # Upsert na tabela PERSON para certificar que o personid existe
-            person_sql = f"""
-            INSERT INTO person (personid, fullname, primaryemail, primaryphone)
-            VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder})
-            ON CONFLICT (personid) DO UPDATE SET
-                fullname = EXCLUDED.fullname;
-            """ if db_manager.is_postgres else f"""
-            INSERT INTO person (personid, fullname, primaryemail, primaryphone)
-            VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder})
-            ON CONFLICT (personid) DO UPDATE SET
-                fullname = excluded.fullname;
-            """
+            # Upsert na tabela PERSON em lote para garantir foreign key
+            person_sql_pg = "INSERT INTO person (personid, fullname, primaryemail, primaryphone) VALUES %s ON CONFLICT (personid) DO UPDATE SET fullname = EXCLUDED.fullname;"
+            person_sql_sqlite = "INSERT INTO person (personid, fullname, primaryemail, primaryphone) VALUES (%s, %s, %s, %s) ON CONFLICT (personid) DO UPDATE SET fullname = excluded.fullname;"
 
+            unique_person_tuples = {}
             for idx, row in df_combined.iterrows():
                 pid = clean_int(row['personid'])
+                if not pid or pid in unique_person_tuples:
+                    continue
                 email = clean_str(row.get('primaryemail'))
                 if email:
                     email = email.lower()
-                p_tuple = (pid, clean_str(row.get('fullname')), email, clean_str(row.get('primaryphone')))
-                cur.execute(person_sql, p_tuple)
+                unique_person_tuples[pid] = (pid, clean_str(row.get('fullname')), email, clean_str(row.get('primaryphone')))
+
+            person_tuples = list(unique_person_tuples.values())
+            if person_tuples:
+                fast_batch_insert(cur, person_sql_pg, person_sql_sqlite, person_tuples, page_size=5000)
+
 
             # Inserção incremental na tabela CERTIFICATION
-            # Regras:
-            # 1. Inserir APENAS registros com data válida em originalgrantdate.
-            # 2. Checar se (certificationid, certificationtypename, effectivestartdate) já existem no banco. Se existir, pula; se não, insere.
-            cur.execute("SELECT certificationid, certificationtypename, effectivestartdate FROM certification;")
+            cur.execute("SELECT certificationid, personid, certificationtypename FROM certification;")
             existing_certs = set(
-                (clean_int(r[0]), clean_str(r[1]), str(r[2]) if r[2] else "") for r in cur.fetchall()
+                (clean_int(r[0]), clean_int(r[1]), clean_str(r[2]).upper() if r[2] else "") for r in cur.fetchall()
             )
             
-            insert_cert_sql = f"""
-            INSERT INTO certification (certificationid, personid, certificationtypename, originalgrantdate, effectivestartdate, effectiveenddate, certificationstatusname, total_cycleseqno)
-            VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder});
-            """
+            sql_pg = "INSERT INTO certification (certificationid, personid, certificationtypename, originalgrantdate, effectivestartdate, effectiveenddate, certificationstatusname, total_cycleseqno) VALUES %s ON CONFLICT (certificationid) DO NOTHING;"
+            sql_sqlite = "INSERT INTO certification (certificationid, personid, certificationtypename, originalgrantdate, effectivestartdate, effectiveenddate, certificationstatusname, total_cycleseqno) VALUES (%s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (certificationid) DO NOTHING;"
 
             new_certs_batch = []
             certs_skipped = 0
@@ -525,19 +559,21 @@ class ETLPipeline:
                 if not pid:
                     continue
 
-                grant_dt = clean_date(row.get('originalgrantdate'))
-                if not grant_dt:
-                    # Regra: Descarta/pula registros sem data de concessão original
+                ctype = clean_str(row.get('certificationtypename'))
+                if not ctype:
                     continue
+
+                start_dt = clean_date(row.get('effectivestartdate'))
+                grant_dt = clean_date(row.get('originalgrantdate')) or start_dt or datetime.now().strftime("%Y-%m-%d")
+                if not start_dt:
+                    start_dt = grant_dt
 
                 cid = clean_int(row.get('certificationid'))
                 if not cid:
-                    # Regra: Se não tiver certificationid, desconsidera/pula essa linha
-                    continue
+                    # Auto-gera ID determinístico se não vier na planilha
+                    cid = abs(hash(f"{pid}_{ctype.upper()}_{grant_dt}")) % (10**12)
 
-                ctype = clean_str(row.get('certificationtypename'))
-                start_dt = clean_date(row.get('effectivestartdate'))
-                c_key = (cid, ctype, str(start_dt) if start_dt else "")
+                c_key = (cid, pid, ctype.upper())
 
                 if c_key in existing_certs:
                     certs_skipped += 1
@@ -550,22 +586,25 @@ class ETLPipeline:
                     grant_dt,
                     start_dt,
                     clean_date(row.get('effectiveenddate')),
-                    clean_str(row.get('certificationstatusname')),
+                    clean_str(row.get('certificationstatusname')) or 'Active',
                     clean_int(row.get('total_cycleseqno'))
                 )
                 new_certs_batch.append(c_tuple)
                 existing_certs.add(c_key)
 
             if new_certs_batch:
-                cur.executemany(insert_cert_sql, new_certs_batch)
+                fast_batch_insert(cur, sql_pg, sql_sqlite, new_certs_batch, page_size=5000)
                 certs_inserted = len(new_certs_batch)
 
+
             conn.commit()
+
             return {
                 "status": "success",
                 "certifications_inserted": certs_inserted,
                 "certifications_skipped": certs_skipped
             }
+
         except Exception as e:
             conn.rollback()
             return {"status": "error", "message": str(e)}

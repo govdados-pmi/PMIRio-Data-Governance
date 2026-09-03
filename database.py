@@ -57,6 +57,11 @@ class DatabaseManager:
 
     def get_connection(self):
         """Retorna uma conexão ativa com o banco PostgreSQL no Supabase."""
+        if not self.connection_string:
+            raise ValueError(
+                "String de conexão com o banco de dados não configurada. "
+                "Verifique se o arquivo .env contém SUPABASE_DB_URL ou se python-dotenv está instalado."
+            )
         return psycopg2.connect(self.connection_string)
 
     @staticmethod

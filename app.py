@@ -418,7 +418,8 @@ if "etl" in tab_dict:
                         cert_paths.append(p)
                 elif use_sample_files:
                     import glob
-                    cert_paths = glob.glob("planilhas/*Certif*.xlsx")
+                    cert_paths = list(set(glob.glob("planilhas/*Certif*.xlsx") + glob.glob("planilhas/*Certification*.xlsx")))
+
 
                 if uploaded_vol:
                     p = os.path.join(temp_dir, uploaded_vol.name)
@@ -461,6 +462,8 @@ if "etl" in tab_dict:
                         st.metric("Filiações Ignoradas (Já Existiam)", res_m.get("memberships_skipped", 0))
                     with m6:
                         st.metric("Certificações Inseridas", res_c.get("certifications_inserted", 0))
+
+
 
 # ==============================================================================
 # ABA: BANCO DE DADOS & CONSOLE SQL — Apenas Admin
