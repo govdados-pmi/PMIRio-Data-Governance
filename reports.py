@@ -454,6 +454,102 @@ class ReportManager:
         df = db_manager.execute_query(query)
         return df
 
+    def get_filiados_renovados_90_dias(self, ref_date: str = None) -> pd.DataFrame:
+        """
+        Filiados com início do mandato atual (startdateforterm) nos últimos 90 dias 
+        cujo ano de originaljoindate é diferente de startdateforterm (renovações efetivas).
+        """
+        dt_ref = self.get_ref_date(ref_date)
+        dt_start = dt_ref - timedelta(days=90)
+        
+        query = """
+        SELECT 
+            p.personid,
+            p.fullname,
+            p.primaryemail,
+            m.issinglemembership,
+            m.isreceiveelectronicnotifications,
+            m.originaljoindate,
+            m.startdateforterm,
+            m.enddateforterm,
+            m.plannameforchapters,
+            m.autorenewstatus,
+            p.primaryphone,
+            m.tenureinyears
+        FROM membership m
+        JOIN person p ON p.personid = m.personid
+        WHERE m.startdateforterm >= %s AND m.startdateforterm <= %s
+          AND m.originaljoindate IS NOT NULL
+        ORDER BY m.startdateforterm DESC;
+        """ if db_manager.is_postgres else """
+        SELECT 
+            p.personid,
+            p.fullname,
+            p.primaryemail,
+            m.issinglemembership,
+            m.isreceiveelectronicnotifications,
+            m.originaljoindate,
+            m.startdateforterm,
+            m.enddateforterm,
+            m.plannameforchapters,
+            m.autorenewstatus,
+            p.primaryphone,
+            m.tenureinyears
+        FROM membership m
+        JOIN person p ON p.personid = m.personid
+        WHERE m.startdateforterm >= ? AND m.startdateforterm <= ?
+          AND m.originaljoindate IS NOT NULL
+        ORDER BY m.startdateforterm DESC;
+        """
+        
+        df = db_manager.execute_query(query, (dt_start.strftime("%Y-%m-%d"), dt_ref.strftime("%Y-%m-%d")))
+        if df.empty:
+            return df
+        
+        start_year = pd.to_datetime(df['startdateforterm'], errors='coerce').dt.year
+        join_year = pd.to_datetime(df['originaljoindate'], errors='coerce').dt.year
+        
+        df_filtered = df[start_year != join_year].copy()
+        return df_filtered.reset_index(drop=True)
+
+    def get_certificacoes_expirando_mes(self, ref_date: str = None) -> pd.DataFrame:
+        """
+        Certificações ativas cuja data de expiração (effectiveenddate) ocorre no mês da data de referência.
+        """
+        dt_ref = self.get_ref_date(ref_date)
+        
+        query = """
+        SELECT 
+            p.personid,
+            p.fullname,
+            p.primaryemail,
+            m.isreceiveelectronicnotifications,
+            c.certificationtypename,
+            c.originalgrantdate,
+            c.effectivestartdate,
+            c.effectiveenddate,
+            c.certificationstatusname,
+            c.total_cycleseqno
+        FROM certification c
+        JOIN person p ON p.personid = c.personid
+        LEFT JOIN membership m ON p.personid = m.personid
+        WHERE c.effectiveenddate IS NOT NULL
+        ORDER BY c.effectiveenddate ASC;
+        """
+        
+        df = db_manager.execute_query(query)
+        if df.empty:
+            return df
+        
+        end_dates = pd.to_datetime(df['effectiveenddate'], errors='coerce')
+        df_filtered = df[
+            (end_dates.dt.month == dt_ref.month) & 
+            (end_dates.dt.year == dt_ref.year)
+        ].copy()
+        
+        return df_filtered.reset_index(drop=True)
+
+
 
     def export_all_to_excel(self, ref_date: str = None, user_role: str = "admin") -> bytes:
         """
@@ -468,6 +564,7 @@ class ReportManager:
             if user_role in ["admin", "filiacao"]:
                 self.get_filiados_ativos(ref_date).to_excel(writer, sheet_name='Filiados_Ativos', index=False)
                 self.get_novos_filiados_30_dias(ref_date).to_excel(writer, sheet_name='Novos_Filiados_30D', index=False)
+                self.get_filiados_renovados_90_dias(ref_date).to_excel(writer, sheet_name='Renovados_90D', index=False)
                 self.get_desfiliados_30_dias(ref_date).to_excel(writer, sheet_name='Desfiliados_30D', index=False)
                 self.get_desfiliacao_prox_30_dias(ref_date).to_excel(writer, sheet_name='Desfilia_Prox_30D', index=False)
                 self.get_desfiliacao_prox_90_dias(ref_date).to_excel(writer, sheet_name='Desfilia_Prox_90D', index=False)
@@ -477,6 +574,8 @@ class ReportManager:
             
             if user_role in ["admin", "certificacao"]:
                 self.get_certificados_ultimos_3_meses(ref_date).to_excel(writer, sheet_name='Certificados_3_Meses', index=False)
+                self.get_certificacoes_expirando_mes(ref_date).to_excel(writer, sheet_name='Cert_Expirando_Mes', index=False)
+
                 
             if user_role in ["admin", "voluntariado"]:
                 self.get_voluntarios_filtrados().to_excel(writer, sheet_name='Voluntarios_Ativos', index=False)

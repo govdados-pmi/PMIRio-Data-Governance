@@ -568,18 +568,84 @@ if "reports" in tab_dict:
         
         st.markdown("---")
         
-        # Mapeamento completo de relatórios padrão do sistema (Filiados Ativos em 1º lugar)
+        # Dicionário de Metadados do Catálogo de Dados
+        report_meta_info = {
+            "Filiados_Ativos": {
+                "categoria": "🔵 Gestão de Filiação (Ciclo de Vida)",
+                "descricao": "Base geral nominal de todos os membros ativos (anuidade vigente) no capítulo PMI Rio.",
+                "projetos": "Monitoramento geral do capítulo, relatórios gerenciais e contagem oficial de filiados."
+            },
+            "Novos_Filiados_30D": {
+                "categoria": "🔵 Gestão de Filiação (Ciclo de Vida)",
+                "descricao": "Relatório focado no acolhimento de novos membros no primeiro mês de vínculo com o capítulo para ações de boas-vindas.",
+                "projetos": "Programa de Boas-Vindas e Jornada do Filiado."
+            },
+            "Renovados_90D": {
+                "categoria": "🔵 Gestão de Filiação (Ciclo de Vida)",
+                "descricao": "Filiados com início do mandato nos últimos 90 dias cujo ano da primeira filiação é anterior (confirmação de renovação).",
+                "projetos": "Medição de campanhas de retenção e fluxo de agradecimento aos membros."
+            },
+            "Filiados_1_Trimestre": {
+                "categoria": "🔵 Gestão de Filiação (Ciclo de Vida)",
+                "descricao": "Relatório de membros que completam 3 meses de casa (1º trimestre) no mês de referência.",
+                "projetos": "Apoio às metas LATAM de engajamento e acompanhamento de marcos da Jornada do Filiado."
+            },
+            "Filiados_1_Semestre": {
+                "categoria": "🔵 Gestão de Filiação (Ciclo de Vida)",
+                "descricao": "Relatório de membros que completam 6 meses de casa (1º semestre) no mês de referência.",
+                "projetos": "Apoio às metas LATAM de engajamento e acompanhamento da Jornada do Filiado."
+            },
+            "Aniversariantes_Filiacao": {
+                "categoria": "🔵 Gestão de Filiação (Ciclo de Vida)",
+                "descricao": "Filiados ativos que comemoram marcas históricas de filiação (1, 3, 5, 10, 15, 20 ou 25 anos) no mês atual.",
+                "projetos": "Programa de Reconhecimento e Valorização do Filiado."
+            },
+            "Desfilia_Prox_30D": {
+                "categoria": "⚠️ Retenção e Risco (Churn)",
+                "descricao": "Relatório de monitoramento de risco iminente com filiações a expirar nos próximos 30 dias para alerta imediato.",
+                "projetos": "Alerta imediato de retenção e apoio às metas LATAM."
+            },
+            "Desfilia_Prox_90D": {
+                "categoria": "⚠️ Retenção e Risco (Churn)",
+                "descricao": "Previsão trimestral de expirações nos próximos 90 dias para planejamento preventivo de retenção.",
+                "projetos": "Planejamento preventivo de retenção e campanhas de renovação."
+            },
+            "Desfiliados_30D": {
+                "categoria": "⚠️ Retenção e Risco (Churn)",
+                "descricao": "Relatório de perdas (churn) listando membros cujo vínculo expirou nos últimos 30 dias sem renovação.",
+                "projetos": "Ações de recuperação (win-back) e análise de motivos de saída."
+            },
+            "Certificados_3_Meses": {
+                "categoria": "🎓 Certificações & Reconhecimento",
+                "descricao": "Membros do capítulo que conquistaram novas certificações PMI nos últimos 3 meses.",
+                "projetos": "Hall da Fama, postagens sociais e estatísticas do capítulo."
+            },
+            "Certificacoes_Expirando_Mes": {
+                "categoria": "🎓 Certificações & Reconhecimento",
+                "descricao": "Certificações ativas cuja data de expiração (effectiveenddate) ocorre no mês de referência.",
+                "projetos": "Alertas de manutenção de credenciais (CCRs / PDUs) e renovação de certificações."
+            },
+            "Voluntarios_Ativos": {
+                "categoria": "🤝 Voluntariado & Oportunidades",
+                "descricao": "Listagem de candidaturas e posições de voluntariado ativas no capítulo.",
+                "projetos": "Gestão da Diretoria de Voluntariado e alocação de equipes de projetos."
+            }
+        }
+
+        # Mapeamento completo de relatórios padrão do sistema
         standard_reports_map = {
-            "Filiados_Ativos": ("Filiados Ativos", "Filiados_Ativos", lambda: report_manager.get_filiados_ativos(ref_date_str)),
-            "Novos_Filiados_30D": ("Novos Filiados (30D)", "Novos_Filiados_30D", lambda: report_manager.get_novos_filiados_30_dias(ref_date_str)),
-            "Desfiliados_30D": ("Desfiliados (30D)", "Desfiliados_30D", lambda: report_manager.get_desfiliados_30_dias(ref_date_str)),
-            "Desfilia_Prox_30D": ("A Vencer (30D)", "Desfilia_Prox_30D", lambda: report_manager.get_desfiliacao_prox_30_dias(ref_date_str)),
-            "Desfilia_Prox_90D": ("A Vencer (90D)", "Desfilia_Prox_90D", lambda: report_manager.get_desfiliacao_prox_90_dias(ref_date_str)),
-            "Filiados_1_Trimestre": ("1º Trimestre (3M)", "Filiados_1_Trimestre", lambda: report_manager.get_filiados_1_trimestre(ref_date_str)),
-            "Filiados_1_Semestre": ("1º Semestre (6M)", "Filiados_1_Semestre", lambda: report_manager.get_filiados_1_semestre(ref_date_str)),
-            "Aniversariantes_Filiacao": ("Aniversariantes", "Aniversariantes", lambda: report_manager.get_aniversariantes_filiacao(ref_date_str)),
-            "Certificados_3_Meses": ("Certificados (3M)", "Certificados_3_Meses", lambda: report_manager.get_certificados_ultimos_3_meses(ref_date_str)),
-            "Voluntarios_Ativos": ("Voluntários Ativos", "Voluntarios_Ativos", lambda: report_manager.get_voluntarios_filtrados())
+            "Filiados_Ativos": ("🔵 Filiados Ativos", "Filiados_Ativos", lambda: report_manager.get_filiados_ativos(ref_date_str), "Filiados_Ativos"),
+            "Novos_Filiados_30D": ("🔵 Novos Filiados (30D)", "Novos_Filiados_30D", lambda: report_manager.get_novos_filiados_30_dias(ref_date_str), "Novos_Filiados_30D"),
+            "Renovados_90D": ("🔵 Filiados Renovados (90D)", "Filiados_Renovados_90D", lambda: report_manager.get_filiados_renovados_90_dias(ref_date_str), "Renovados_90D"),
+            "Filiados_1_Trimestre": ("🔵 1º Trimestre (3M)", "Filiados_1_Trimestre", lambda: report_manager.get_filiados_1_trimestre(ref_date_str), "Filiados_1_Trimestre"),
+            "Filiados_1_Semestre": ("🔵 1º Semestre (6M)", "Filiados_1_Semestre", lambda: report_manager.get_filiados_1_semestre(ref_date_str), "Filiados_1_Semestre"),
+            "Aniversariantes_Filiacao": ("🔵 Aniversariantes de Filiação", "Aniversariantes", lambda: report_manager.get_aniversariantes_filiacao(ref_date_str), "Aniversariantes_Filiacao"),
+            "Desfilia_Prox_30D": ("⚠️ A Vencer nos Próximos 30D", "Desfilia_Prox_30D", lambda: report_manager.get_desfiliacao_prox_30_dias(ref_date_str), "Desfilia_Prox_30D"),
+            "Desfilia_Prox_90D": ("⚠️ A Vencer nos Próximos 90D", "Desfilia_Prox_90D", lambda: report_manager.get_desfiliacao_prox_90_dias(ref_date_str), "Desfilia_Prox_90D"),
+            "Desfiliados_30D": ("⚠️ Desfiliados nos Últimos 30D", "Desfiliados_30D", lambda: report_manager.get_desfiliados_30_dias(ref_date_str), "Desfiliados_30D"),
+            "Certificados_3_Meses": ("🎓 Certificados (Últimos 3M)", "Certificados_3_Meses", lambda: report_manager.get_certificados_ultimos_3_meses(ref_date_str), "Certificados_3_Meses"),
+            "Certificacoes_Expirando_Mes": ("🎓 Certificações Expirando no Mês", "Certificacoes_Expirando_Mes", lambda: report_manager.get_certificacoes_expirando_mes(ref_date_str), "Certificacoes_Expirando_Mes"),
+            "Voluntarios_Ativos": ("🤝 Voluntários Ativos", "Voluntarios_Ativos", lambda: report_manager.get_voluntarios_filtrados(), "Voluntarios_Ativos")
         }
 
         # Carrega relatórios customizados salvos no banco
@@ -595,7 +661,7 @@ if "reports" in tab_dict:
                 def make_custom_func(sql):
                     return lambda: db_manager.execute_query(sql)
                 
-                custom_reports_map[c_key] = (f"📊 {cname}", f"Custom_{cname.replace(' ', '_')}", make_custom_func(csql))
+                custom_reports_map[c_key] = (f"📊 {cname}", f"Custom_{cname.replace(' ', '_')}", make_custom_func(csql), c_key)
 
         # Une todos os relatórios disponíveis
         all_available_reports_map = {**standard_reports_map, **custom_reports_map}
@@ -632,18 +698,40 @@ if "reports" in tab_dict:
                 )
 
             with col_content:
-                title, filename, func = active_reports[selected_report_idx]
+                title, filename, func, report_key = active_reports[selected_report_idx]
                 try:
                     df = func()
                     
                     st.markdown(f"### {title}")
-                    st.markdown(f"**Total de registros:** {len(df)}")
+                    st.markdown(f"**Total de registros encontrados:** {len(df)}")
                     
+                    # Card Informativo de Metadados do Catálogo de Dados
+                    meta_item = report_meta_info.get(report_key, {
+                        "categoria": "📊 Relatórios Customizados",
+                        "descricao": "Consulta SQL personalizada criada no Console.",
+                        "projetos": "Análises sob demanda e relatórios Ad-Hoc da Diretoria."
+                    })
+                    
+                    with st.expander("📖 Dicionário de Dados & Informações do Catálogo", expanded=True):
+                        col_m1, col_m2 = st.columns(2)
+                        with col_m1:
+                            st.markdown(f"**📂 Categoria:** {meta_item['categoria']}")
+                            st.markdown(f"**🎯 Descrição da Base:** {meta_item['descricao']}")
+                        with col_m2:
+                            st.markdown(f"**🚀 Projetos em Utilização:** {meta_item['projetos']}")
+                            
+                            # Permissão Dinâmica do Perfil Logado
+                            if role == "admin":
+                                perm_text = "👑 Administrador (Acesso Total Habilitado)"
+                            else:
+                                perm_text = f"👤 {user.get('full_name', 'Usuário')} ({user.get('email')}) — Permissão Ativa ✅"
+                            st.markdown(f"**🔒 Quem Tem Acesso:** {perm_text}")
+
                     # Botões de Download acima da tabela de dados
                     c1, c2 = st.columns(2)
                     with c1:
                         st.download_button(
-                            f"⬇️ Baixar CSV",
+                            f"⬇️ Baixar CSV - {filename}",
                             data=df.to_csv(index=False).encode('utf-8'),
                             file_name=f"{filename}_{ref_date_str}.csv",
                             mime="text/csv",
@@ -655,7 +743,7 @@ if "reports" in tab_dict:
                         df.to_excel(bio.name, index=False)
                         with open(bio.name, "rb") as f:
                             st.download_button(
-                                f"⬇️ Baixar Excel",
+                                f"⬇️ Baixar Excel - {filename}",
                                 data=f.read(),
                                 file_name=f"{filename}_{ref_date_str}.xlsx",
                                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -667,6 +755,7 @@ if "reports" in tab_dict:
                     st.dataframe(df, use_container_width=True)
                 except Exception as err:
                     st.error(f"Erro ao carregar o relatório '{title}': {err}")
+
 
 # ==============================================================================
 # ABA: MUDAR SENHA (Disponível para todos os usuários)
