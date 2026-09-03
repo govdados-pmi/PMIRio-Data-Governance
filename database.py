@@ -111,12 +111,18 @@ class DatabaseManager:
             conn_mig = self.get_connection()
             cur_mig = conn_mig.cursor()
             try:
-                # 1. Adiciona tenureinyears na tabela membership se não existir
-                try:
-                    cur_mig.execute("ALTER TABLE membership ADD COLUMN tenureinyears NUMERIC;")
-                    conn_mig.commit()
-                except Exception:
-                    pass
+                # 1. Adiciona colunas novas se não existirem
+                for alter_sql in [
+                    "ALTER TABLE membership ADD COLUMN tenureinyears NUMERIC;",
+                    "ALTER TABLE person ADD COLUMN alternativeemail VARCHAR;",
+                    "ALTER TABLE app_user ADD COLUMN allowed_reports VARCHAR;",
+                    "ALTER TABLE app_user ADD COLUMN is_active BOOLEAN DEFAULT TRUE;"
+                ]:
+                    try:
+                        cur_mig.execute(alter_sql)
+                        conn_mig.commit()
+                    except Exception:
+                        conn_mig.rollback()
 
                 # 2. Cria person_history se não existir
                 ph_sql = """
@@ -140,15 +146,8 @@ class DatabaseManager:
                 """
                 cur_mig.execute(ph_sql)
                 conn_mig.commit()
-                
-                # 3. Adiciona allowed_reports em app_user se não existir
-                try:
-                    cur_mig.execute("ALTER TABLE app_user ADD COLUMN allowed_reports VARCHAR;")
-                    conn_mig.commit()
-                except Exception:
-                    pass
 
-                # 4. Cria custom_report se não existir
+                # 3. Cria custom_report se não existir
                 cr_sql = """
                 CREATE TABLE IF NOT EXISTS custom_report (
                     report_id SERIAL PRIMARY KEY,
