@@ -66,99 +66,51 @@ class DatabaseManager:
 
     @staticmethod
     def hash_password(password: str) -> str:
-        """Gera hash SHA-256 com salt estático para armazenamento seguro de senhas."""
-        salt = "pmi_rio_gov_dados_salt_2026"
+        """Gera hash SHA-256 para armazenamento seguro de senhas."""
+        salt = os.getenv("PASSWORD_SALT", "pmi_rio_gov_dados_salt_2026")
         return hashlib.sha256((password + salt).encode('utf-8')).hexdigest()
 
-    def init_db(self, schema_file: str = "schema.sql"):
+    def init_db(self, schema_file: Optional[str] = None):
         """
-        Executa o DDL de criação das tabelas no Supabase se elas não existirem e insere os usuários padrão.
+        Verifica a conectividade com o banco de dados.
+        A estrutura de tabelas (DDL) já está criada no PostgreSQL/Supabase.
         """
-        if not os.path.exists(schema_file):
-            return
-
-        with open(schema_file, "r", encoding="utf-8") as f:
-            sql_script = f.read()
-
-        conn = self.get_connection()
         try:
-            cur = conn.cursor()
-            pg_script = sql_script.replace("CREATE TABLE ", "CREATE TABLE IF NOT EXISTS ")
-            pg_script = pg_script.replace("INTEGER PRIMARY KEY AUTOINCREMENT", "SERIAL PRIMARY KEY")
-            
-            # Executa instrução por instrução isoladamente com rollback individual se já existir
-            statements = [s.strip() for s in pg_script.split(";") if s.strip()]
-            for stmt in statements:
-                try:
-                    cur.execute(stmt)
-                    conn.commit()
-                except Exception:
-                    conn.rollback()
-            cur.close()
-
-            # Migração graciosa de colunas individuais
-            for alter_sql in [
-                "ALTER TABLE membership ADD COLUMN tenureinyears NUMERIC;",
-                "ALTER TABLE person ADD COLUMN alternativeemail VARCHAR;",
-                "ALTER TABLE app_user ADD COLUMN allowed_reports VARCHAR;",
-                "ALTER TABLE app_user ADD COLUMN is_active BOOLEAN DEFAULT TRUE;",
-                "ALTER TABLE certification ALTER COLUMN certificationid DROP NOT NULL;"
-            ]:
-                cur_mig = conn.cursor()
-                try:
-                    cur_mig.execute(alter_sql)
-                    conn.commit()
-                except Exception:
-                    conn.rollback()
-                finally:
-                    cur_mig.close()
-        finally:
+            conn = self.get_connection()
             conn.close()
-
-        self.seed_default_users()
-
-    def seed_default_users(self):
-        """Insere ou atualiza os usuários padrão de cada diretoria."""
-        placeholder = "%s" if self.is_postgres else "?"
-        
-        # Atualiza admin@pmirio.org.br para govdados@pmirio.org.br se existir
-        try:
-            self.execute_non_query(
-                f"UPDATE app_user SET email = {placeholder} WHERE LOWER(email) = {placeholder};",
-                ("govdados@pmirio.org.br", "admin@pmirio.org.br")
-            )
         except Exception:
             pass
 
-        default_users = [
-            ("govdados@pmirio.org.br", self.hash_password("admin123"), "Administrador de Dados", "admin"),
-            ("filiacao@pmirio.org.br", self.hash_password("filiacao123"), "Diretoria de Filiação", "view"),
-            ("voluntariado@pmirio.org.br", self.hash_password("voluntarios123"), "Diretoria de Voluntariado", "view"),
-            ("certificacao@pmirio.org.br", self.hash_password("certificacao123"), "Diretoria de Certificação", "view")
-        ]
-        
+    def seed_default_users(self):
+        """
+        Cria o usuário administrador inicial apenas se as variáveis de ambiente 
+        INITIAL_ADMIN_EMAIL e INITIAL_ADMIN_PASSWORD estiverem configuradas no .env.
+        Sem credenciais ou senhas hardcoded no código.
+        """
+        admin_email = os.getenv("INITIAL_ADMIN_EMAIL")
+        admin_password = os.getenv("INITIAL_ADMIN_PASSWORD")
+        if not admin_email or not admin_password:
+            return
+
+        placeholder = "%s" if self.is_postgres else "?"
+        pwd_hash = self.hash_password(admin_password)
         conn = self.get_connection()
         try:
             cur = conn.cursor()
-            for email, pwd_hash, name, role in default_users:
-                cur.execute(f"SELECT 1 FROM app_user WHERE LOWER(email) = LOWER({placeholder});", (email,))
-                if not cur.fetchone():
-                    sql = f"""
-                    INSERT INTO app_user (email, password_hash, full_name, role, is_active)
-                    VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, TRUE);
-                    """
-                    cur.execute(sql, (email, pwd_hash, name, role))
-                else:
-                    sql = f"""
-                    UPDATE app_user 
-                    SET password_hash = {placeholder}, role = {placeholder}, is_active = TRUE
-                    WHERE LOWER(email) = LOWER({placeholder});
-                    """
-                    cur.execute(sql, (pwd_hash, role, email))
-            conn.commit()
+            cur.execute(f"SELECT 1 FROM app_user WHERE LOWER(email) = LOWER({placeholder});", (admin_email,))
+            if not cur.fetchone():
+                sql = f"""
+                INSERT INTO app_user (email, password_hash, full_name, role, is_active)
+                VALUES ({placeholder}, {placeholder}, {placeholder}, 'admin', TRUE);
+                """
+                cur.execute(sql, (admin_email, pwd_hash, "Administrador de Dados"))
+                conn.commit()
             cur.close()
+        except Exception:
+            conn.rollback()
         finally:
             conn.close()
+
 
 
 
