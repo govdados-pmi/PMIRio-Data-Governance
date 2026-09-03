@@ -552,10 +552,10 @@ class ETLPipeline:
                 fast_batch_insert(cur, person_sql_pg, person_sql_sqlite, person_tuples, page_size=5000)
 
 
-            # Inserção incremental na tabela CERTIFICATION
-            cur.execute("SELECT certificationid, personid, certificationtypename FROM certification;")
+            # Inserção incremental na tabela CERTIFICATION (Deduplicação por personid + certificationtypename + effectivestartdate)
+            cur.execute("SELECT personid, certificationtypename, effectivestartdate FROM certification;")
             existing_certs = set(
-                (clean_int(r[0]), clean_int(r[1]), clean_str(r[2]).upper() if r[2] else "") for r in cur.fetchall()
+                (clean_int(r[0]), clean_str(r[1]).strip().upper() if r[1] else "", str(clean_date(r[2]))) for r in cur.fetchall()
             )
             
             sql_pg = "INSERT INTO certification (certificationid, personid, certificationtypename, originalgrantdate, effectivestartdate, effectiveenddate, certificationstatusname, total_cycleseqno) VALUES %s ON CONFLICT (certificationid) DO NOTHING;"
@@ -579,21 +579,21 @@ class ETLPipeline:
                     continue
                 c_status = c_status.strip().title()
 
-                start_dt = clean_date(row.get('effectivestartdate'))
+                start_dt = clean_date(row.get('effectivestartdate')) or clean_date(row.get('originalgrantdate'))
                 grant_dt = clean_date(row.get('originalgrantdate')) or start_dt or datetime.now().strftime("%Y-%m-%d")
                 if not start_dt:
                     start_dt = grant_dt
 
-                cid = clean_int(row.get('certificationid'))
-                if not cid:
-                    # Auto-gera ID determinístico se não vier na planilha
-                    cid = abs(hash(f"{pid}_{ctype.upper()}_{grant_dt}")) % (10**12)
-
-                c_key = (cid, pid, ctype.upper())
+                c_key = (pid, ctype.strip().upper(), str(start_dt))
 
                 if c_key in existing_certs:
                     certs_skipped += 1
                     continue
+
+                cid = clean_int(row.get('certificationid'))
+                if not cid:
+                    # Auto-gera ID determinístico baseado na chave única
+                    cid = abs(hash(f"{pid}_{ctype.strip().upper()}_{start_dt}")) % (10**12)
 
                 c_tuple = (
                     cid,
@@ -607,6 +607,7 @@ class ETLPipeline:
                 )
                 new_certs_batch.append(c_tuple)
                 existing_certs.add(c_key)
+
 
 
             if new_certs_batch:
