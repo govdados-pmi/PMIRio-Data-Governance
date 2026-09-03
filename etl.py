@@ -563,6 +563,12 @@ class ETLPipeline:
                 if not ctype:
                     continue
 
+                c_status = clean_str(row.get('certificationstatusname'))
+                if not c_status or c_status.strip().title() not in ['Certified', 'Expired', 'Suspended']:
+                    certs_skipped += 1
+                    continue
+                c_status = c_status.strip().title()
+
                 start_dt = clean_date(row.get('effectivestartdate'))
                 grant_dt = clean_date(row.get('originalgrantdate')) or start_dt or datetime.now().strftime("%Y-%m-%d")
                 if not start_dt:
@@ -586,11 +592,12 @@ class ETLPipeline:
                     grant_dt,
                     start_dt,
                     clean_date(row.get('effectiveenddate')),
-                    clean_str(row.get('certificationstatusname')) or 'Active',
+                    c_status,
                     clean_int(row.get('total_cycleseqno'))
                 )
                 new_certs_batch.append(c_tuple)
                 existing_certs.add(c_key)
+
 
             if new_certs_batch:
                 fast_batch_insert(cur, sql_pg, sql_sqlite, new_certs_batch, page_size=5000)
