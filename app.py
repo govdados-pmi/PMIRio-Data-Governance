@@ -144,7 +144,7 @@ if "user" not in st.session_state:
 # ==============================================================================
 if not st.session_state["logged_in"]:
     st.markdown('<h1 class="main-title" style="text-align: center;">PMI Rio — Portal de Dados & Governança</h1>', unsafe_allow_html=True)
-    st.markdown('<p class="sub-title" style="text-align: center;">Autoatendimento Seguro e Governança de Dados da Diretoria</p>', unsafe_allow_html=True)
+    st.markdown('<p class="sub-title" style="text-align: center;">Autoatendimento Seguro e Governança de Dados do Capítulo</p>', unsafe_allow_html=True)
     
     col_l1, col_l2, col_l3 = st.columns([1, 2, 1])
     with col_l2:
