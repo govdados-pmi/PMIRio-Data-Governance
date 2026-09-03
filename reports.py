@@ -31,6 +31,8 @@ class ReportManager:
             p.personid,
             p.fullname,
             p.primaryemail,
+            m.issinglemembership,
+            m.isreceiveelectronicnotifications,
             m.originaljoindate,
             m.startdateforterm,
             m.enddateforterm,
@@ -47,6 +49,8 @@ class ReportManager:
             p.personid,
             p.fullname,
             p.primaryemail,
+            m.issinglemembership,
+            m.isreceiveelectronicnotifications,
             m.originaljoindate,
             m.startdateforterm,
             m.enddateforterm,
@@ -75,6 +79,7 @@ class ReportManager:
             p.personid,
             p.fullname,
             p.primaryemail,
+            m.isreceiveelectronicnotifications,
             m.originaljoindate,
             m.startdateforterm,
             m.enddateforterm,
@@ -91,6 +96,7 @@ class ReportManager:
             p.personid,
             p.fullname,
             p.primaryemail,
+            m.isreceiveelectronicnotifications,
             m.originaljoindate,
             m.startdateforterm,
             m.enddateforterm,
@@ -119,6 +125,7 @@ class ReportManager:
             p.personid,
             p.fullname,
             p.primaryemail,
+            m.isreceiveelectronicnotifications,
             m.originaljoindate,
             m.startdateforterm,
             m.enddateforterm,
@@ -135,6 +142,7 @@ class ReportManager:
             p.personid,
             p.fullname,
             p.primaryemail,
+            m.isreceiveelectronicnotifications,
             m.originaljoindate,
             m.startdateforterm,
             m.enddateforterm,
@@ -163,6 +171,7 @@ class ReportManager:
             p.personid,
             p.fullname,
             p.primaryemail,
+            m.isreceiveelectronicnotifications,
             m.originaljoindate,
             m.startdateforterm,
             m.enddateforterm,
@@ -179,6 +188,7 @@ class ReportManager:
             p.personid,
             p.fullname,
             p.primaryemail,
+            m.isreceiveelectronicnotifications,
             m.originaljoindate,
             m.startdateforterm,
             m.enddateforterm,
@@ -207,6 +217,7 @@ class ReportManager:
             p.personid,
             p.fullname,
             p.primaryemail,
+            m.isreceiveelectronicnotifications,
             m.originaljoindate,
             m.startdateforterm,
             m.enddateforterm,
@@ -223,6 +234,7 @@ class ReportManager:
             p.personid,
             p.fullname,
             p.primaryemail,
+            m.isreceiveelectronicnotifications,
             m.originaljoindate,
             m.startdateforterm,
             m.enddateforterm,
@@ -250,6 +262,7 @@ class ReportManager:
             p.personid,
             p.fullname,
             p.primaryemail,
+            m.isreceiveelectronicnotifications,
             m.originaljoindate,
             m.startdateforterm,
             m.enddateforterm,
@@ -287,6 +300,7 @@ class ReportManager:
             p.personid,
             p.fullname,
             p.primaryemail,
+            m.isreceiveelectronicnotifications,
             m.originaljoindate,
             m.startdateforterm,
             m.enddateforterm,
@@ -326,6 +340,7 @@ class ReportManager:
             p.personid,
             p.fullname,
             p.primaryemail,
+            m.isreceiveelectronicnotifications,
             m.originaljoindate,
             m.startdateforterm,
             m.enddateforterm,
@@ -341,6 +356,7 @@ class ReportManager:
             p.personid,
             p.fullname,
             p.primaryemail,
+            m.isreceiveelectronicnotifications,
             m.originaljoindate,
             m.startdateforterm,
             m.enddateforterm,
@@ -382,6 +398,7 @@ class ReportManager:
             p.personid,
             p.fullname,
             p.primaryemail,
+            m.isreceiveelectronicnotifications,
             c.certificationtypename,
             c.originalgrantdate,
             c.effectivestartdate,
@@ -390,6 +407,7 @@ class ReportManager:
             c.total_cycleseqno
         FROM certification c
         JOIN person p ON p.personid = c.personid
+        LEFT JOIN membership m ON p.personid = m.personid
         WHERE c.originalgrantdate >= %s AND c.originalgrantdate <= %s
         ORDER BY c.originalgrantdate DESC;
         """ if db_manager.is_postgres else """
@@ -397,6 +415,7 @@ class ReportManager:
             p.personid,
             p.fullname,
             p.primaryemail,
+            m.isreceiveelectronicnotifications,
             c.certificationtypename,
             c.originalgrantdate,
             c.effectivestartdate,
@@ -405,6 +424,7 @@ class ReportManager:
             c.total_cycleseqno
         FROM certification c
         JOIN person p ON p.personid = c.personid
+        LEFT JOIN membership m ON p.personid = m.personid
         WHERE c.originalgrantdate >= ? AND c.originalgrantdate <= ?
         ORDER BY c.originalgrantdate DESC;
         """
@@ -421,16 +441,19 @@ class ReportManager:
             v.voluntary_id,
             v.applicants,
             v.email_address,
+            m.isreceiveelectronicnotifications,
             v.opportunity_name,
             v.opportunity_description,
             v.application_status,
             v.application_service_start_date,
             v.application_service_end_date
         FROM voluntary v
+        LEFT JOIN membership m ON v.personid = m.personid
         ORDER BY v.application_service_start_date DESC;
         """
         df = db_manager.execute_query(query)
         return df
+
 
     def export_all_to_excel(self, ref_date: str = None, user_role: str = "admin") -> bytes:
         """
