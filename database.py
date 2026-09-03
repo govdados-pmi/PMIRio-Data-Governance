@@ -21,7 +21,24 @@ class DatabaseManager:
         - Variáveis individuais (SUPABASE_PROJECT_REF, SUPABASE_DB_PASSWORD, PGHOST, etc.)
         - Fallback resiliente para SQLite ('voluntariado.db') se sem credenciais ativas.
         """
+        # 1. Tenta pegar de parâmetro explícito ou variáveis de ambiente
         self.connection_string = connection_string or os.getenv("SUPABASE_DB_URL") or os.getenv("DATABASE_URL") or os.getenv("POSTGRES_URL")
+        
+        # 2. Tenta pegar de st.secrets do Streamlit (Streamlit Cloud ou .streamlit/secrets.toml)
+        if not self.connection_string:
+            try:
+                import streamlit as st
+                if hasattr(st, "secrets"):
+                    if "SUPABASE_DB_URL" in st.secrets:
+                        self.connection_string = st.secrets["SUPABASE_DB_URL"]
+                    elif "DATABASE_URL" in st.secrets:
+                        self.connection_string = st.secrets["DATABASE_URL"]
+                    elif "postgres" in st.secrets:
+                        pg = st.secrets["postgres"]
+                        self.connection_string = f"postgresql://{pg.get('user')}:{pg.get('password')}@{pg.get('host')}:{pg.get('port', 5432)}/{pg.get('dbname', 'postgres')}"
+            except Exception:
+                pass
+
         self.is_postgres = False
         
         # Verifica se forneceu URL direta do Supabase/Postgres
