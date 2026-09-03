@@ -263,6 +263,7 @@ if "users" in tab_dict:
                     if new_email and new_name and new_pass:
                         allowed_json = json.dumps(selected_reports) if new_role == "view" else None
                         if db_manager.create_user(new_email, new_pass, new_name, new_role, allowed_json):
+                            st.cache_data.clear()
                             st.success(f"Acesso criado com sucesso para {new_name} ({new_email})!")
                             st.rerun()
                         else:
@@ -276,6 +277,7 @@ if "users" in tab_dict:
             st.markdown("### 📋 Usuários Cadastrados no Banco de Dados")
         with col_u_ref:
             if st.button("🔄 Atualizar Lista", key="btn_refresh_users_list", use_container_width=True):
+                st.cache_data.clear()
                 st.rerun()
 
         
@@ -326,6 +328,7 @@ if "users" in tab_dict:
                     toggle_btn_label = "🔴 Desativar" if uactive else "🟢 Ativar"
                     if st.button(toggle_btn_label, key=f"btn_toggle_usr_{uid}"):
                         db_manager.toggle_user_status(uid, uactive)
+                        st.cache_data.clear()
                         st.rerun()
                 with col_u5:
                     show_edit_key = f"show_edit_{uid}"
@@ -359,6 +362,7 @@ if "users" in tab_dict:
                                 placeholder = "%s" if db_manager.is_postgres else "?"
                                 sql_upd = f"UPDATE app_user SET role = {placeholder}, allowed_reports = {placeholder} WHERE user_id = {placeholder};"
                                 db_manager.execute_non_query(sql_upd, (edit_role, new_json, uid))
+                                st.cache_data.clear()
                                 st.session_state[f"show_edit_{uid}"] = False
                                 st.success(f"Permissões atualizadas com sucesso para {uname}!")
                                 st.rerun()
@@ -451,6 +455,7 @@ if "etl" in tab_dict:
                     has_error = True
 
                 if not has_error:
+                    st.cache_data.clear()
                     st.success(f"🎉 Pipeline executado com sucesso em **{t_elapsed} segundos**!")
 
                     m1, m2, m3, m4, m5, m6 = st.columns(6)
@@ -498,6 +503,7 @@ if "db" in tab_dict:
                         if rep_title.strip():
                             query_to_save = st.session_state.get("last_sql_query", custom_sql)
                             if db_manager.save_custom_report(rep_title, query_to_save, rep_desc, user["full_name"]):
+                                st.cache_data.clear()
                                 st.success(f"Relatório '{rep_title}' salvo com sucesso! Ele agora pode ser atribuído na Gestão de Acessos e acessado na Central de Relatórios.")
                                 st.rerun()
                             else:
@@ -512,6 +518,7 @@ if "db" in tab_dict:
             st.subheader("📋 Relatórios Personalizados Criados pelo Console SQL")
         with col_c_ref:
             if st.button("🔄 Atualizar Lista", key="btn_refresh_custom_reports", use_container_width=True):
+                st.cache_data.clear()
                 st.rerun()
 
         c_reports = db_manager.list_custom_reports()
@@ -531,6 +538,7 @@ if "db" in tab_dict:
                 with col_c3:
                     if st.button("🗑️ Excluir Relatório", key=f"del_crep_{cid}"):
                         if db_manager.delete_custom_report(cid):
+                            st.cache_data.clear()
                             st.success(f"Relatório '{cname}' excluído com sucesso!")
                             st.rerun()
 

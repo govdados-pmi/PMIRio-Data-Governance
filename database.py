@@ -251,6 +251,10 @@ class DatabaseManager:
                 cur.execute(sql)
             conn.commit()
             cur.close()
+            try:
+                st.cache_data.clear()
+            except Exception:
+                pass
         finally:
             conn.close()
 
