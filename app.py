@@ -284,6 +284,29 @@ if "users" in tab_dict:
         
         users_df = db_manager.list_users()
         if not users_df.empty:
+            col_u_dl1, col_u_dl2 = st.columns(2)
+            with col_u_dl1:
+                st.download_button(
+                    "⬇️ Baixar Lista de Usuários (CSV)",
+                    data=users_df.to_csv(index=False).encode('utf-8'),
+                    file_name="usuarios_cadastrados.csv",
+                    mime="text/csv",
+                    key="dl_users_csv",
+                    use_container_width=True
+                )
+            with col_u_dl2:
+                bio_u = tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx')
+                users_df.to_excel(bio_u.name, index=False)
+                with open(bio_u.name, "rb") as f_u:
+                    st.download_button(
+                        "⬇️ Baixar Lista de Usuários (Excel)",
+                        data=f_u.read(),
+                        file_name="usuarios_cadastrados.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        key="dl_users_xlsx",
+                        use_container_width=True
+                    )
+            
             m1, m2, m3, m4 = st.columns(4)
             with m1:
                 st.metric("Total de Acessos", len(users_df))
@@ -493,6 +516,31 @@ if "db" in tab_dict:
                 st.error(f"Erro na execução da consulta: {e}")
 
         if "last_sql_result" in st.session_state and st.session_state["last_sql_result"] is not None:
+            df_res = st.session_state["last_sql_result"]
+            if not df_res.empty:
+                col_sql_dl1, col_sql_dl2 = st.columns(2)
+                with col_sql_dl1:
+                    st.download_button(
+                        "⬇️ Baixar Resultado SQL (CSV)",
+                        data=df_res.to_csv(index=False).encode('utf-8'),
+                        file_name=f"consulta_sql_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                        mime="text/csv",
+                        key="dl_sql_csv",
+                        use_container_width=True
+                    )
+                with col_sql_dl2:
+                    bio_sql = tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx')
+                    df_res.to_excel(bio_sql.name, index=False)
+                    with open(bio_sql.name, "rb") as f_sql:
+                        st.download_button(
+                            "⬇️ Baixar Resultado SQL (Excel)",
+                            data=f_sql.read(),
+                            file_name=f"consulta_sql_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            key="dl_sql_xlsx",
+                            use_container_width=True
+                        )
+            
             st.markdown("---")
             with st.expander("💾 Transformar esta Consulta em um Novo Relatório Personalizado"):
                 with st.form("form_save_custom_report"):
@@ -551,6 +599,31 @@ if "db" in tab_dict:
             try:
                 df_table = db_manager.execute_query(f"SELECT * FROM {table_choice} LIMIT 500;")
                 st.markdown(f"**Registros exibidos:** {len(df_table)} linhas")
+                
+                if not df_table.empty:
+                    col_tbl_dl1, col_tbl_dl2 = st.columns(2)
+                    with col_tbl_dl1:
+                        st.download_button(
+                            f"⬇️ Baixar Tabela '{table_choice}' (CSV)",
+                            data=df_table.to_csv(index=False).encode('utf-8'),
+                            file_name=f"tabela_{table_choice}.csv",
+                            mime="text/csv",
+                            key=f"dl_tbl_csv_{table_choice}",
+                            use_container_width=True
+                        )
+                    with col_tbl_dl2:
+                        bio_tbl = tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx')
+                        df_table.to_excel(bio_tbl.name, index=False)
+                        with open(bio_tbl.name, "rb") as f_tbl:
+                            st.download_button(
+                                f"⬇️ Baixar Tabela '{table_choice}' (Excel)",
+                                data=f_tbl.read(),
+                                file_name=f"tabela_{table_choice}.xlsx",
+                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                key=f"dl_tbl_xlsx_{table_choice}",
+                                use_container_width=True
+                            )
+                
                 st.dataframe(df_table, use_container_width=True)
             except Exception as e:
                 st.error(f"Erro ao consultar tabela {table_choice}: {e}")
@@ -703,6 +776,18 @@ if "reports" in tab_dict:
                     options=range(len(active_reports)),
                     format_func=lambda idx: active_reports[idx][0],
                     key="vertical_report_radio_selector"
+                )
+                
+                st.markdown("---")
+                all_excel_bytes = report_manager.export_all_to_excel(ref_date_str, role, user_allowed_keys)
+                st.download_button(
+                    "📦 Baixar Pacote Completo (.xlsx com todas as abas)",
+                    data=all_excel_bytes,
+                    file_name=f"Relatorios_PMI_Rio_Pacote_{ref_date_str}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    type="secondary",
+                    key="btn_download_all_reports_pkg",
+                    use_container_width=True
                 )
 
         with col_content:

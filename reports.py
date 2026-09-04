@@ -12,6 +12,17 @@ class ReportManager:
     def __init__(self):
         pass
 
+    def format_report_df(self, df: pd.DataFrame) -> pd.DataFrame:
+        if df.empty:
+            return df
+        renames = {
+            'isreceiveelectronicnotifications': 'Aceita Notificações Eletrônicas'
+        }
+        df = df.rename(columns=renames)
+        if 'Aceita Notificações Eletrônicas' in df.columns:
+            df['Aceita Notificações Eletrônicas'] = df['Aceita Notificações Eletrônicas'].map({True: 'Sim', False: 'Não', 1: 'Sim', 0: 'Não', '1': 'Sim', '0': 'Não'}).fillna('Não')
+        return df
+
     def get_ref_date(self, ref_date: str = None) -> datetime:
         if ref_date:
             try:
@@ -66,7 +77,7 @@ class ReportManager:
         
         ref_str = dt_ref.strftime("%Y-%m-%d")
         df = db_manager.execute_query(query, (ref_str, ref_str))
-        return df
+        return self.format_report_df(df)
 
     def get_novos_filiados_30_dias(self, ref_date: str = None) -> pd.DataFrame:
         """
@@ -112,7 +123,7 @@ class ReportManager:
         """
         
         df = db_manager.execute_query(query, (dt_start.strftime("%Y-%m-%d"), dt_ref.strftime("%Y-%m-%d")))
-        return df
+        return self.format_report_df(df)
 
     def get_desfiliados_30_dias(self, ref_date: str = None) -> pd.DataFrame:
         """
@@ -158,7 +169,7 @@ class ReportManager:
         """
         
         df = db_manager.execute_query(query, (dt_start.strftime("%Y-%m-%d"), dt_ref.strftime("%Y-%m-%d")))
-        return df
+        return self.format_report_df(df)
 
     def get_desfiliacao_prox_30_dias(self, ref_date: str = None) -> pd.DataFrame:
         """
@@ -204,7 +215,7 @@ class ReportManager:
         """
         
         df = db_manager.execute_query(query, (dt_ref.strftime("%Y-%m-%d"), dt_end.strftime("%Y-%m-%d")))
-        return df
+        return self.format_report_df(df)
 
     def get_desfiliacao_prox_90_dias(self, ref_date: str = None) -> pd.DataFrame:
         """
@@ -250,7 +261,7 @@ class ReportManager:
         """
         
         df = db_manager.execute_query(query, (dt_ref.strftime("%Y-%m-%d"), dt_end.strftime("%Y-%m-%d")))
-        return df
+        return self.format_report_df(df)
 
     def get_filiados_1_trimestre(self, ref_date: str = None) -> pd.DataFrame:
         """
@@ -288,7 +299,7 @@ class ReportManager:
         ].copy()
         
         df_filtered = df_filtered.drop(columns=['originaljoindate_dt', 'data_3_meses'])
-        return df_filtered.sort_values(by='originaljoindate', ignore_index=True)
+        return self.format_report_df(df_filtered.sort_values(by='originaljoindate', ignore_index=True))
 
     def get_filiados_1_semestre(self, ref_date: str = None) -> pd.DataFrame:
         """
@@ -326,7 +337,7 @@ class ReportManager:
         ].copy()
         
         df_filtered = df_filtered.drop(columns=['originaljoindate_dt', 'data_6_meses'])
-        return df_filtered.sort_values(by='originaljoindate', ignore_index=True)
+        return self.format_report_df(df_filtered.sort_values(by='originaljoindate', ignore_index=True))
 
     def get_aniversariantes_filiacao(self, ref_date: str = None) -> pd.DataFrame:
         """
@@ -383,7 +394,7 @@ class ReportManager:
         ].copy()
         
         df_filtered = df_filtered.drop(columns=['originaljoindate_dt'])
-        return df_filtered.sort_values(by='originaljoindate', ignore_index=True)
+        return self.format_report_df(df_filtered.sort_values(by='originaljoindate', ignore_index=True))
 
     def get_certificados_ultimos_3_meses(self, ref_date: str = None) -> pd.DataFrame:
         """
@@ -429,7 +440,7 @@ class ReportManager:
         """
         
         df = db_manager.execute_query(query, (dt_start.strftime("%Y-%m-%d"), dt_ref.strftime("%Y-%m-%d")))
-        return df
+        return self.format_report_df(df)
 
     def get_voluntarios_filtrados(self) -> pd.DataFrame:
         """
@@ -451,7 +462,7 @@ class ReportManager:
         ORDER BY v.application_service_start_date DESC;
         """
         df = db_manager.execute_query(query)
-        return df
+        return self.format_report_df(df)
 
     def get_filiados_renovados_90_dias(self, ref_date: str = None) -> pd.DataFrame:
         """
@@ -509,7 +520,7 @@ class ReportManager:
         join_year = pd.to_datetime(df['originaljoindate'], errors='coerce').dt.year
         
         df_filtered = df[start_year != join_year].copy()
-        return df_filtered.reset_index(drop=True)
+        return self.format_report_df(df_filtered.reset_index(drop=True))
 
     def get_certificacoes_expirando_mes(self, ref_date: str = None) -> pd.DataFrame:
         """
@@ -546,39 +557,39 @@ class ReportManager:
             (end_dates.dt.year == dt_ref.year)
         ].copy()
         
-        return df_filtered.reset_index(drop=True)
+        return self.format_report_df(df_filtered.reset_index(drop=True))
 
 
 
-    def export_all_to_excel(self, ref_date: str = None, user_role: str = "admin") -> bytes:
+    def export_all_to_excel(self, ref_date: str = None, user_role: str = "admin", allowed_keys: list = None) -> bytes:
         """
-        Gera uma planilha Excel (.xlsx) contendo as abas autorizadas para o papel do usuário.
-        - admin: todas as abas
-        - filiacao: abas de filiação e renovação
-        - voluntariado: 1 aba de voluntários
-        - certificacao: 1 aba de certificações
+        Gera uma planilha Excel (.xlsx) contendo todas as abas de relatórios autorizadas para o usuário.
         """
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            if user_role in ["admin", "filiacao"]:
-                self.get_filiados_ativos(ref_date).to_excel(writer, sheet_name='Filiados_Ativos', index=False)
-                self.get_novos_filiados_30_dias(ref_date).to_excel(writer, sheet_name='Novos_Filiados_30D', index=False)
-                self.get_filiados_renovados_90_dias(ref_date).to_excel(writer, sheet_name='Renovados_90D', index=False)
-                self.get_desfiliados_30_dias(ref_date).to_excel(writer, sheet_name='Desfiliados_30D', index=False)
-                self.get_desfiliacao_prox_30_dias(ref_date).to_excel(writer, sheet_name='Desfilia_Prox_30D', index=False)
-                self.get_desfiliacao_prox_90_dias(ref_date).to_excel(writer, sheet_name='Desfilia_Prox_90D', index=False)
-                self.get_filiados_1_trimestre(ref_date).to_excel(writer, sheet_name='Filiados_1_Trimestre', index=False)
-                self.get_filiados_1_semestre(ref_date).to_excel(writer, sheet_name='Filiados_1_Semestre', index=False)
-                self.get_aniversariantes_filiacao(ref_date).to_excel(writer, sheet_name='Aniversariantes', index=False)
+            all_reports = {
+                'Filiados_Ativos': lambda: self.get_filiados_ativos(ref_date),
+                'Novos_Filiados_30D': lambda: self.get_novos_filiados_30_dias(ref_date),
+                'Renovados_90D': lambda: self.get_filiados_renovados_90_dias(ref_date),
+                'Desfiliados_30D': lambda: self.get_desfiliados_30_dias(ref_date),
+                'Desfilia_Prox_30D': lambda: self.get_desfiliacao_prox_30_dias(ref_date),
+                'Desfilia_Prox_90D': lambda: self.get_desfiliacao_prox_90_dias(ref_date),
+                'Filiados_1_Trimestre': lambda: self.get_filiados_1_trimestre(ref_date),
+                'Filiados_1_Semestre': lambda: self.get_filiados_1_semestre(ref_date),
+                'Aniversariantes': lambda: self.get_aniversariantes_filiacao(ref_date),
+                'Certificados_3_Meses': lambda: self.get_certificados_ultimos_3_meses(ref_date),
+                'Cert_Expirando_Mes': lambda: self.get_certificacoes_expirando_mes(ref_date),
+                'Voluntarios_Ativos': lambda: self.get_voluntarios_filtrados()
+            }
             
-            if user_role in ["admin", "certificacao"]:
-                self.get_certificados_ultimos_3_meses(ref_date).to_excel(writer, sheet_name='Certificados_3_Meses', index=False)
-                self.get_certificacoes_expirando_mes(ref_date).to_excel(writer, sheet_name='Cert_Expirando_Mes', index=False)
-
-                
-            if user_role in ["admin", "voluntariado"]:
-                self.get_voluntarios_filtrados().to_excel(writer, sheet_name='Voluntarios_Ativos', index=False)
-        
+            for key, fn in all_reports.items():
+                if user_role == "admin" or allowed_keys is None or key in allowed_keys:
+                    try:
+                        df = fn()
+                        if not df.empty:
+                            df.to_excel(writer, sheet_name=key[:31], index=False)
+                    except Exception:
+                        pass
         output.seek(0)
         return output.getvalue()
 
