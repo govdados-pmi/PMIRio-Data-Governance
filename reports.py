@@ -566,6 +566,7 @@ class ReportManager:
         Gera uma planilha Excel (.xlsx) contendo todas as abas de relatórios autorizadas para o usuário.
         """
         output = io.BytesIO()
+        sheets_added = 0
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
             all_reports = {
                 'Filiados_Ativos': lambda: self.get_filiados_ativos(ref_date),
@@ -576,9 +577,9 @@ class ReportManager:
                 'Desfilia_Prox_90D': lambda: self.get_desfiliacao_prox_90_dias(ref_date),
                 'Filiados_1_Trimestre': lambda: self.get_filiados_1_trimestre(ref_date),
                 'Filiados_1_Semestre': lambda: self.get_filiados_1_semestre(ref_date),
-                'Aniversariantes': lambda: self.get_aniversariantes_filiacao(ref_date),
+                'Aniversariantes_Filiacao': lambda: self.get_aniversariantes_filiacao(ref_date),
                 'Certificados_3_Meses': lambda: self.get_certificados_ultimos_3_meses(ref_date),
-                'Cert_Expirando_Mes': lambda: self.get_certificacoes_expirando_mes(ref_date),
+                'Certificacoes_Expirando_Mes': lambda: self.get_certificacoes_expirando_mes(ref_date),
                 'Voluntarios_Ativos': lambda: self.get_voluntarios_filtrados()
             }
             
@@ -586,10 +587,14 @@ class ReportManager:
                 if user_role == "admin" or allowed_keys is None or key in allowed_keys:
                     try:
                         df = fn()
-                        if not df.empty:
+                        if df is not None and not df.empty:
                             df.to_excel(writer, sheet_name=key[:31], index=False)
+                            sheets_added += 1
                     except Exception:
                         pass
+            
+            if sheets_added == 0:
+                pd.DataFrame({"Aviso": ["Nenhum dado encontrado para os relatórios autorizados nesta data."]}).to_excel(writer, sheet_name="Sem_Dados", index=False)
         output.seek(0)
         return output.getvalue()
 

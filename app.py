@@ -143,7 +143,10 @@ if "user" not in st.session_state:
 # ==============================================================================
 # TELA DE LOGIN (Caso não autenticado)
 # ==============================================================================
-if not st.session_state["logged_in"]:
+if not st.session_state.get("logged_in", False) or not st.session_state.get("user"):
+    st.session_state["logged_in"] = False
+    st.session_state["user"] = None
+    
     st.markdown('<h1 class="main-title" style="text-align: center;">PMI Rio — Portal de Dados & Governança</h1>', unsafe_allow_html=True)
     st.markdown('<p class="sub-title" style="text-align: center;">Autoatendimento Seguro e Governança de Dados do Capítulo</p>', unsafe_allow_html=True)
     
@@ -729,22 +732,11 @@ if "reports" in tab_dict:
                     format_func=lambda idx: active_reports[idx][0],
                     key="vertical_report_radio_selector"
                 )
-                
-                st.markdown("---")
-                all_excel_bytes = report_manager.export_all_to_excel(ref_date_str, role, user_allowed_keys)
-                st.download_button(
-                    "📦 Baixar Pacote Completo (.xlsx com todas as abas)",
-                    data=all_excel_bytes,
-                    file_name=f"Relatorios_PMI_Rio_Pacote_{ref_date_str}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    type="secondary",
-                    key="btn_download_all_reports_pkg",
-                    use_container_width=True
-                )
 
         with col_content:
             if active_reports:
-                title, filename, func, report_key = active_reports[selected_report_idx]
+                selected_idx = min(max(0, selected_report_idx if 'selected_report_idx' in locals() else 0), len(active_reports) - 1)
+                title, filename, func, report_key = active_reports[selected_idx]
                 try:
                     df = func()
                     
