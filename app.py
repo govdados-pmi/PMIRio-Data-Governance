@@ -749,12 +749,12 @@ if "reports" in tab_dict:
                     df = func()
                     
                     # Cabeçalho Compacto: Título + Downloads na Mesma Linha
-                    col_t1, col_t2 = st.columns([1.5, 1.5])
+                    col_t1, col_t2 = st.columns([1.1, 1.4])
                     with col_t1:
                         st.markdown(f"### {title}")
                         st.markdown(f"**Total de registros encontrados:** `{len(df)}`")
                     with col_t2:
-                        c_dl1, c_dl2, c_dl3 = st.columns(3)
+                        c_dl1, c_dl2 = st.columns(2)
                         with c_dl1:
                             st.download_button(
                                 "⬇️ Baixar em CSV",
@@ -778,27 +778,6 @@ if "reports" in tab_dict:
                                     key=f"dl_xlsx_{selected_report_idx}_{filename}",
                                     use_container_width=True
                                 )
-                        with c_dl3:
-                            sql_text = f"-- Consulta SQL do Relatório: {title}\n-- Data de Referência: {ref_date_str}\n"
-                            if report_key.startswith("custom_") and not custom_reports_df.empty:
-                                cid_str = report_key.replace("custom_", "")
-                                match_rep = custom_reports_df[custom_reports_df["report_id"].astype(str) == cid_str]
-                                if not match_rep.empty:
-                                    sql_text += str(match_rep.iloc[0]["sql_query"])
-                                else:
-                                    sql_text += "-- Consulta customizada\n"
-                            else:
-                                sql_text += f"-- Relatório nativo: {report_key}\n"
-
-                            st.download_button(
-                                "⬇️ Baixar em SQL",
-                                data=sql_text.encode('utf-8'),
-                                file_name=f"{filename}_{ref_date_str}.sql",
-                                mime="text/plain",
-                                type="secondary",
-                                key=f"dl_sql_{selected_report_idx}_{filename}",
-                                use_container_width=True
-                            )
                     
                     # Card Informativo de Metadados do Catálogo de Dados (Fechado por Padrão)
                     meta_item = report_meta_info.get(report_key, {
