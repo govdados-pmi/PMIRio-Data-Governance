@@ -284,29 +284,6 @@ if "users" in tab_dict:
         
         users_df = db_manager.list_users()
         if not users_df.empty:
-            col_u_dl1, col_u_dl2 = st.columns(2)
-            with col_u_dl1:
-                st.download_button(
-                    "⬇️ Baixar Lista de Usuários (CSV)",
-                    data=users_df.to_csv(index=False).encode('utf-8'),
-                    file_name="usuarios_cadastrados.csv",
-                    mime="text/csv",
-                    key="dl_users_csv",
-                    use_container_width=True
-                )
-            with col_u_dl2:
-                bio_u = tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx')
-                users_df.to_excel(bio_u.name, index=False)
-                with open(bio_u.name, "rb") as f_u:
-                    st.download_button(
-                        "⬇️ Baixar Lista de Usuários (Excel)",
-                        data=f_u.read(),
-                        file_name="usuarios_cadastrados.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        key="dl_users_xlsx",
-                        use_container_width=True
-                    )
-            
             m1, m2, m3, m4 = st.columns(4)
             with m1:
                 st.metric("Total de Acessos", len(users_df))
@@ -599,31 +576,6 @@ if "db" in tab_dict:
             try:
                 df_table = db_manager.execute_query(f"SELECT * FROM {table_choice} LIMIT 500;")
                 st.markdown(f"**Registros exibidos:** {len(df_table)} linhas")
-                
-                if not df_table.empty:
-                    col_tbl_dl1, col_tbl_dl2 = st.columns(2)
-                    with col_tbl_dl1:
-                        st.download_button(
-                            f"⬇️ Baixar Tabela '{table_choice}' (CSV)",
-                            data=df_table.to_csv(index=False).encode('utf-8'),
-                            file_name=f"tabela_{table_choice}.csv",
-                            mime="text/csv",
-                            key=f"dl_tbl_csv_{table_choice}",
-                            use_container_width=True
-                        )
-                    with col_tbl_dl2:
-                        bio_tbl = tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx')
-                        df_table.to_excel(bio_tbl.name, index=False)
-                        with open(bio_tbl.name, "rb") as f_tbl:
-                            st.download_button(
-                                f"⬇️ Baixar Tabela '{table_choice}' (Excel)",
-                                data=f_tbl.read(),
-                                file_name=f"tabela_{table_choice}.xlsx",
-                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                key=f"dl_tbl_xlsx_{table_choice}",
-                                use_container_width=True
-                            )
-                
                 st.dataframe(df_table, use_container_width=True)
             except Exception as e:
                 st.error(f"Erro ao consultar tabela {table_choice}: {e}")
@@ -797,15 +749,15 @@ if "reports" in tab_dict:
                     df = func()
                     
                     # Cabeçalho Compacto: Título + Downloads na Mesma Linha
-                    col_t1, col_t2 = st.columns([2, 1])
+                    col_t1, col_t2 = st.columns([1.5, 1.5])
                     with col_t1:
                         st.markdown(f"### {title}")
                         st.markdown(f"**Total de registros encontrados:** `{len(df)}`")
                     with col_t2:
-                        c_dl1, c_dl2 = st.columns(2)
+                        c_dl1, c_dl2, c_dl3 = st.columns(3)
                         with c_dl1:
                             st.download_button(
-                                "⬇️ CSV",
+                                "⬇️ Baixar em CSV",
                                 data=df.to_csv(index=False).encode('utf-8'),
                                 file_name=f"{filename}_{ref_date_str}.csv",
                                 mime="text/csv",
@@ -818,7 +770,7 @@ if "reports" in tab_dict:
                             df.to_excel(bio.name, index=False)
                             with open(bio.name, "rb") as f:
                                 st.download_button(
-                                    "⬇️ Excel",
+                                    "⬇️ Baixar em Excel",
                                     data=f.read(),
                                     file_name=f"{filename}_{ref_date_str}.xlsx",
                                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -826,6 +778,27 @@ if "reports" in tab_dict:
                                     key=f"dl_xlsx_{selected_report_idx}_{filename}",
                                     use_container_width=True
                                 )
+                        with c_dl3:
+                            sql_text = f"-- Consulta SQL do Relatório: {title}\n-- Data de Referência: {ref_date_str}\n"
+                            if report_key.startswith("custom_") and not custom_reports_df.empty:
+                                cid_str = report_key.replace("custom_", "")
+                                match_rep = custom_reports_df[custom_reports_df["report_id"].astype(str) == cid_str]
+                                if not match_rep.empty:
+                                    sql_text += str(match_rep.iloc[0]["sql_query"])
+                                else:
+                                    sql_text += "-- Consulta customizada\n"
+                            else:
+                                sql_text += f"-- Relatório nativo: {report_key}\n"
+
+                            st.download_button(
+                                "⬇️ Baixar em SQL",
+                                data=sql_text.encode('utf-8'),
+                                file_name=f"{filename}_{ref_date_str}.sql",
+                                mime="text/plain",
+                                type="secondary",
+                                key=f"dl_sql_{selected_report_idx}_{filename}",
+                                use_container_width=True
+                            )
                     
                     # Card Informativo de Metadados do Catálogo de Dados (Fechado por Padrão)
                     meta_item = report_meta_info.get(report_key, {
