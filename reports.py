@@ -466,11 +466,12 @@ class ReportManager:
             for _, r in group.iterrows():
                 if r['start_dt'] <= anniv_dt and r['end_dt'] >= anniv_dt:
                     anniv_term_row = r
+                
+                # Regra 1: Existe uma nova membresia iniciando após o aniversário
                 if r['start_dt'] > anniv_dt:
                     has_renewal = True
-            
-            if not has_renewal and anniv_term_row is not None:
-                if anniv_term_row['start_dt'] > anniv_term_row['join_dt'] and anniv_term_row['end_dt'] >= anniv_dt:
+                # Regra 2: A membresia atual do aniversário tem validade estendida (end_dt > aniversário + 30 dias)
+                elif r['start_dt'] <= anniv_dt and r['end_dt'] > (anniv_dt + timedelta(days=30)):
                     has_renewal = True
             
             if has_renewal:
