@@ -1114,7 +1114,7 @@ if "reports" in tab_dict:
                         "projetos": "Análises sob demanda e relatórios Ad-Hoc da Diretoria."
                     })
                     
-                    with st.expander("📖 Dicionário de Dados & Informações do Catálogo", expanded=False):
+                    with st.expander("📖 Dicionário de Dados & Informações do Catálogo", expanded=True):
                         col_m1, col_m2 = st.columns(2)
                         with col_m1:
                             st.markdown(f"**📂 Categoria:** {meta_item['categoria']}")
@@ -1122,11 +1122,34 @@ if "reports" in tab_dict:
                         with col_m2:
                             st.markdown(f"**🚀 Projetos em Utilização:** {meta_item['projetos']}")
                             
-                            # Permissão Dinâmica do Perfil Logado
-                            if role == "admin":
-                                perm_text = "👑 Administrador (Acesso Total Habilitado)"
-                            else:
-                                perm_text = f"👤 {user.get('full_name', 'Usuário')} ({user.get('email')}) — Permissão Ativa ✅"
+                            # Busca dinâmica de todos os usuários (Admins + Visualizadores com permissão)
+                            users_all_df = db_manager.list_users()
+                            authorized_user_names = []
+
+                            if not users_all_df.empty:
+                                for _, u_row in users_all_df.iterrows():
+                                    u_active = bool(u_row.get("is_active", True))
+                                    if not u_active:
+                                        continue
+                                        
+                                    u_role = str(u_row.get("role", "view"))
+                                    u_name = str(u_row.get("full_name", u_row.get("email", "")))
+                                    
+                                    if u_role == "admin":
+                                        authorized_user_names.append(f"{u_name} (👑 Admin)")
+                                    else:
+                                        raw_allowed = u_row.get("allowed_reports")
+                                        if raw_allowed:
+                                            try:
+                                                allowed_list = json.loads(raw_allowed)
+                                                if report_key in allowed_list:
+                                                    authorized_user_names.append(f"{u_name} (👁️ Visualização)")
+                                            except Exception:
+                                                pass
+                                        else:
+                                            authorized_user_names.append(f"{u_name} (👁️ Visualização)")
+
+                            perm_text = ", ".join(authorized_user_names) if authorized_user_names else "Nenhum usuário cadastrado."
                             st.markdown(f"**🔒 Quem Tem Acesso:** {perm_text}")
 
                     st.markdown("---")
