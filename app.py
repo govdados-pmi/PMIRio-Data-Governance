@@ -478,19 +478,259 @@ if "etl" in tab_dict:
 
 
 
+# Dicionário de Consultas SQL Padrão do Sistema
+STANDARD_REPORTS_SQL = {
+    "Filiados Ativos": """SELECT 
+    p.personid,
+    p.fullname,
+    p.primaryemail,
+    m.issinglemembership,
+    m.isreceiveelectronicnotifications,
+    m.originaljoindate,
+    m.startdateforterm,
+    m.enddateforterm,
+    m.plannameforchapters,
+    m.autorenewstatus,
+    p.primaryphone,
+    m.tenureinyears
+FROM membership m
+JOIN person p ON p.personid = m.personid
+WHERE m.startdateforterm <= CURRENT_DATE AND m.enddateforterm >= CURRENT_DATE
+ORDER BY m.enddateforterm DESC;""",
+    "Novos Filiados (30D)": """SELECT 
+    p.personid,
+    p.fullname,
+    p.primaryemail,
+    m.isreceiveelectronicnotifications,
+    m.originaljoindate,
+    m.startdateforterm,
+    m.enddateforterm,
+    m.plannameforchapters,
+    m.autorenewstatus,
+    p.primaryphone,
+    m.tenureinyears
+FROM membership m
+JOIN person p ON p.personid = m.personid
+WHERE m.originaljoindate >= (CURRENT_DATE - INTERVAL '30 days') AND m.originaljoindate <= CURRENT_DATE
+ORDER BY m.originaljoindate DESC;""",
+    "Filiados Renovados (90D)": """SELECT 
+    p.personid,
+    p.fullname,
+    p.primaryemail,
+    m.issinglemembership,
+    m.isreceiveelectronicnotifications,
+    m.originaljoindate,
+    m.startdateforterm,
+    m.enddateforterm,
+    m.plannameforchapters,
+    m.autorenewstatus,
+    p.primaryphone,
+    m.tenureinyears
+FROM membership m
+JOIN person p ON p.personid = m.personid
+WHERE m.startdateforterm >= (CURRENT_DATE - INTERVAL '90 days') AND m.startdateforterm <= CURRENT_DATE
+  AND m.originaljoindate IS NOT NULL
+ORDER BY m.startdateforterm DESC;""",
+    "1º Trimestre (3M)": """SELECT 
+    p.personid,
+    p.fullname,
+    p.primaryemail,
+    m.isreceiveelectronicnotifications,
+    m.originaljoindate,
+    m.startdateforterm,
+    m.enddateforterm,
+    m.plannameforchapters,
+    m.autorenewstatus,
+    p.primaryphone,
+    m.tenureinyears
+FROM membership m
+JOIN person p ON p.personid = m.personid
+WHERE m.originaljoindate IS NOT NULL;""",
+    "1º Semestre (6M)": """SELECT 
+    p.personid,
+    p.fullname,
+    p.primaryemail,
+    m.isreceiveelectronicnotifications,
+    m.originaljoindate,
+    m.startdateforterm,
+    m.enddateforterm,
+    m.plannameforchapters,
+    m.autorenewstatus,
+    p.primaryphone,
+    m.tenureinyears
+FROM membership m
+JOIN person p ON p.personid = m.personid
+WHERE m.originaljoindate IS NOT NULL;""",
+    "Aniversariantes de Filiação": """SELECT 
+    p.personid,
+    p.fullname,
+    p.primaryemail,
+    m.isreceiveelectronicnotifications,
+    m.originaljoindate,
+    m.startdateforterm,
+    m.enddateforterm,
+    m.plannameforchapters,
+    m.autorenewstatus,
+    p.primaryphone
+FROM membership m
+JOIN person p ON p.personid = m.personid
+WHERE m.startdateforterm <= CURRENT_DATE AND m.enddateforterm >= CURRENT_DATE AND m.originaljoindate IS NOT NULL;""",
+    "A Vencer nos Próximos 30D": """SELECT 
+    p.personid,
+    p.fullname,
+    p.primaryemail,
+    m.isreceiveelectronicnotifications,
+    m.originaljoindate,
+    m.startdateforterm,
+    m.enddateforterm,
+    m.plannameforchapters,
+    m.autorenewstatus,
+    p.primaryphone,
+    m.tenureinyears
+FROM membership m
+JOIN person p ON p.personid = m.personid
+WHERE m.enddateforterm >= CURRENT_DATE AND m.enddateforterm <= (CURRENT_DATE + INTERVAL '30 days')
+ORDER BY m.enddateforterm ASC;""",
+    "A Vencer nos Próximos 90D": """SELECT 
+    p.personid,
+    p.fullname,
+    p.primaryemail,
+    m.isreceiveelectronicnotifications,
+    m.originaljoindate,
+    m.startdateforterm,
+    m.enddateforterm,
+    m.plannameforchapters,
+    m.autorenewstatus,
+    p.primaryphone,
+    m.tenureinyears
+FROM membership m
+JOIN person p ON p.personid = m.personid
+WHERE m.enddateforterm >= CURRENT_DATE AND m.enddateforterm <= (CURRENT_DATE + INTERVAL '90 days')
+ORDER BY m.enddateforterm ASC;""",
+    "Desfiliados nos Últimos 30D": """SELECT 
+    p.personid,
+    p.fullname,
+    p.primaryemail,
+    m.isreceiveelectronicnotifications,
+    m.originaljoindate,
+    m.startdateforterm,
+    m.enddateforterm,
+    m.plannameforchapters,
+    m.autorenewstatus,
+    p.primaryphone,
+    m.tenureinyears
+FROM membership m
+JOIN person p ON p.personid = m.personid
+WHERE m.enddateforterm >= (CURRENT_DATE - INTERVAL '30 days') AND m.enddateforterm <= CURRENT_DATE
+ORDER BY m.enddateforterm DESC;""",
+    "Certificados (Últimos 3M)": """SELECT 
+    p.personid,
+    p.fullname,
+    p.primaryemail,
+    m.isreceiveelectronicnotifications,
+    c.certificationtypename,
+    c.originalgrantdate,
+    c.effectivestartdate,
+    c.effectiveenddate,
+    c.certificationstatusname,
+    c.total_cycleseqno
+FROM certification c
+JOIN person p ON p.personid = c.personid
+LEFT JOIN membership m ON p.personid = m.personid
+WHERE c.originalgrantdate >= (CURRENT_DATE - INTERVAL '3 months') AND c.originalgrantdate <= CURRENT_DATE
+ORDER BY c.originalgrantdate DESC;""",
+    "Certificações Expirando no Mês": """SELECT 
+    p.personid,
+    p.fullname,
+    p.primaryemail,
+    m.isreceiveelectronicnotifications,
+    c.certificationtypename,
+    c.originalgrantdate,
+    c.effectivestartdate,
+    c.effectiveenddate,
+    c.certificationstatusname,
+    c.total_cycleseqno
+FROM certification c
+JOIN person p ON p.personid = c.personid
+LEFT JOIN membership m ON p.personid = m.personid
+WHERE c.effectiveenddate IS NOT NULL
+ORDER BY c.effectiveenddate ASC;""",
+    "Voluntários Ativos": """SELECT 
+    v.voluntary_id,
+    v.applicants,
+    v.email_address,
+    m.isreceiveelectronicnotifications,
+    v.opportunity_name,
+    v.opportunity_description,
+    v.application_status,
+    v.application_service_start_date,
+    v.application_service_end_date
+FROM voluntary v
+LEFT JOIN membership m ON v.personid = m.personid
+ORDER BY v.application_service_start_date DESC;"""
+}
+
+
 # ==============================================================================
 # ABA: TABELAS & CONSOLE SQL — Apenas Admin
 # ==============================================================================
 if "db" in tab_dict:
     with tab_dict["db"]:
         st.subheader("Console SQL Live & Gerador de Relatórios Customizados")
-        custom_sql = st.text_area("Digite sua consulta SQL:", value="SELECT p.personid, p.fullname, p.primaryemail, m.originaljoindate, m.startdateforterm, m.enddateforterm, m.plannameforchapters, m.tenureinyears FROM person p JOIN membership m ON p.personid = m.personid LIMIT 50;")
+        st.markdown("Selecione a consulta de qualquer relatório existente para visualizar o código SQL, alterar filtros e executar/salvar no banco de dados.")
+
+        # Carrega relatórios customizados salvos no banco
+        c_reports_df = db_manager.list_custom_reports()
+
+        # Monta opções pré-configuradas de SQL
+        preset_options = {}
+        preset_options["-- Digitar ou Editar SQL Livre --"] = ("manual", "", "Consulta livre")
+
+        # Adiciona relatórios padrão do sistema
+        for r_name, r_sql in STANDARD_REPORTS_SQL.items():
+            preset_options[f"📌 [Padrão] {r_name}"] = ("standard", r_sql, r_name)
+
+        # Adiciona relatórios customizados do banco
+        if not c_reports_df.empty:
+            for _, crow in c_reports_df.iterrows():
+                cid = int(crow["report_id"])
+                cname = str(crow["report_name"])
+                csql = str(crow["sql_query"])
+                cdesc = str(crow["description"]) if pd.notna(crow.get("description")) else ""
+                preset_options[f"📊 [Customizado] {cname}"] = ("custom", csql, cname, cid, cdesc)
+
+        # Dropdown para carregar SQL de um relatório existente
+        selected_preset_key = st.selectbox(
+            "📌 Carregar Consulta SQL de Relatório Existente:",
+            options=list(preset_options.keys()),
+            key="preset_sql_selector"
+        )
+
+        preset_data = preset_options[selected_preset_key]
+        preset_type = preset_data[0]
+
+        # Sincroniza seleção com a área de texto
+        if "active_preset_key" not in st.session_state or st.session_state["active_preset_key"] != selected_preset_key:
+            st.session_state["active_preset_key"] = selected_preset_key
+            if preset_type != "manual":
+                st.session_state["sql_console_query_input"] = preset_data[1]
+
+        default_query = "SELECT p.personid, p.fullname, p.primaryemail, m.originaljoindate, m.startdateforterm, m.enddateforterm, m.plannameforchapters, m.tenureinyears FROM person p JOIN membership m ON p.personid = m.personid LIMIT 50;"
+        if "sql_console_query_input" not in st.session_state:
+            st.session_state["sql_console_query_input"] = default_query
+
+        custom_sql = st.text_area(
+            "Editor de Consulta SQL (Visualize, edite ou crie novos comandos):",
+            key="sql_console_query_input",
+            height=200
+        )
         
-        if st.button("Executar Consulta SQL", type="primary"):
+        if st.button("🚀 Executar Consulta SQL", type="primary", use_container_width=True):
             try:
                 df_custom = db_manager.execute_query(custom_sql)
                 st.session_state["last_sql_result"] = df_custom
                 st.session_state["last_sql_query"] = custom_sql
+                st.success(f"Consulta executada com sucesso! `{len(df_custom)}` registros retornados.")
                 st.dataframe(df_custom, use_container_width=True)
             except Exception as e:
                 st.error(f"Erro na execução da consulta: {e}")
@@ -522,23 +762,62 @@ if "db" in tab_dict:
                         )
             
             st.markdown("---")
-            with st.expander("💾 Transformar esta Consulta em um Novo Relatório Personalizado"):
-                with st.form("form_save_custom_report"):
-                    rep_title = st.text_input("Nome do Relatório Personalizado", placeholder="Ex: Filiados Ativos da Cidade do Rio")
-                    rep_desc = st.text_input("Descrição do Relatório (opcional)", placeholder="Ex: Filtro especial de filiados residentes no Rio de Janeiro")
-                    
-                    submit_save_rep = st.form_submit_button("💾 Salvar como Novo Relatório", type="primary")
-                    if submit_save_rep:
-                        if rep_title.strip():
-                            query_to_save = st.session_state.get("last_sql_query", custom_sql)
-                            if db_manager.save_custom_report(rep_title, query_to_save, rep_desc, user["full_name"]):
-                                st.cache_data.clear()
-                                st.success(f"Relatório '{rep_title}' salvo com sucesso! Ele agora pode ser atribuído na Gestão de Acessos e acessado na Central de Relatórios.")
-                                st.rerun()
+            if preset_type == "custom":
+                cid = preset_data[3]
+                default_name = preset_data[2]
+                default_desc = preset_data[4]
+                
+                col_act1, col_act2 = st.columns(2)
+                with col_act1:
+                    with st.expander("💾 Salvar Alterações Neste Relatório Customizado", expanded=True):
+                        with st.form(f"form_update_custom_rep_{cid}"):
+                            upd_title = st.text_input("Nome do Relatório", value=default_name)
+                            upd_desc = st.text_input("Descrição do Relatório", value=default_desc)
+                            submit_upd = st.form_submit_button("💾 Salvar Alterações", type="primary", use_container_width=True)
+                            if submit_upd:
+                                query_to_save = st.session_state.get("last_sql_query", custom_sql)
+                                if db_manager.update_custom_report(cid, upd_title, query_to_save, upd_desc):
+                                    st.cache_data.clear()
+                                    st.success(f"Relatório '{upd_title}' atualizado com sucesso!")
+                                    st.rerun()
+                                else:
+                                    st.error("Erro ao atualizar o relatório no banco.")
+                with col_act2:
+                    with st.expander("➕ Salvar como Novo Relatório Personalizado", expanded=False):
+                        with st.form("form_save_new_custom_report_preset"):
+                            rep_title = st.text_input("Nome do Novo Relatório", placeholder="Ex: Cópias de Filiados Ativos")
+                            rep_desc = st.text_input("Descrição do Relatório (opcional)", placeholder="Ex: Filtro customizado...")
+                            submit_save_rep = st.form_submit_button("🚀 Salvar como Novo Relatório", type="primary", use_container_width=True)
+                            if submit_save_rep:
+                                if rep_title.strip():
+                                    query_to_save = st.session_state.get("last_sql_query", custom_sql)
+                                    if db_manager.save_custom_report(rep_title, query_to_save, rep_desc, user["full_name"]):
+                                        st.cache_data.clear()
+                                        st.success(f"Novo relatório '{rep_title}' salvo com sucesso!")
+                                        st.rerun()
+                                    else:
+                                        st.error("Erro ao salvar o novo relatório no banco.")
+                                else:
+                                    st.warning("Informe um nome para o novo relatório.")
+            else:
+                with st.expander("💾 Salvar esta Consulta como um Relatório Personalizado"):
+                    with st.form("form_save_custom_report"):
+                        default_new_title = preset_data[2] if preset_type == "standard" else ""
+                        rep_title = st.text_input("Nome do Relatório Personalizado", value=f"Cópia de {default_new_title}" if default_new_title else "", placeholder="Ex: Filiados Ativos da Cidade do Rio")
+                        rep_desc = st.text_input("Descrição do Relatório (opcional)", placeholder="Ex: Filtro especial de filiados residentes no Rio de Janeiro")
+                        
+                        submit_save_rep = st.form_submit_button("💾 Salvar como Novo Relatório", type="primary", use_container_width=True)
+                        if submit_save_rep:
+                            if rep_title.strip():
+                                query_to_save = st.session_state.get("last_sql_query", custom_sql)
+                                if db_manager.save_custom_report(rep_title, query_to_save, rep_desc, user["full_name"]):
+                                    st.cache_data.clear()
+                                    st.success(f"Relatório '{rep_title}' salvo com sucesso! Ele agora pode ser atribuído na Gestão de Acessos e acessado na Central de Relatórios.")
+                                    st.rerun()
+                                else:
+                                    st.error("Erro ao salvar o relatório personalizado no banco.")
                             else:
-                                st.error("Erro ao salvar o relatório personalizado no banco.")
-                        else:
-                            st.warning("Informe um nome para o relatório personalizado.")
+                                st.warning("Informe um nome para o relatório personalizado.")
 
         # Lista Relatórios Personalizados Salvos
         st.markdown("---")
@@ -559,17 +838,25 @@ if "db" in tab_dict:
                 csql = str(crow["sql_query"])
                 cauthor = str(crow["created_by"]) if pd.notna(crow.get("created_by")) else "Admin"
                 
-                col_c1, col_c2, col_c3 = st.columns([4, 4, 2])
+                col_c1, col_c2, col_c3 = st.columns([3.5, 4.5, 4])
                 with col_c1:
                     st.markdown(f"**{cname}**<br><small style='color: #64748B;'>Criado por {cauthor}</small>", unsafe_allow_html=True)
                 with col_c2:
                     st.code(csql, language="sql")
                 with col_c3:
-                    if st.button("🗑️ Excluir Relatório", key=f"del_crep_{cid}"):
-                        if db_manager.delete_custom_report(cid):
-                            st.cache_data.clear()
-                            st.success(f"Relatório '{cname}' excluído com sucesso!")
+                    c_b1, c_b2 = st.columns(2)
+                    with c_b1:
+                        if st.button("✏️ Carregar no Editor", key=f"edit_crep_{cid}", use_container_width=True):
+                            st.session_state["sql_console_query_input"] = csql
+                            st.session_state["preset_sql_selector"] = f"📊 [Customizado] {cname}"
+                            st.session_state["active_preset_key"] = f"📊 [Customizado] {cname}"
                             st.rerun()
+                    with c_b2:
+                        if st.button("🗑️ Excluir", key=f"del_crep_{cid}", use_container_width=True):
+                            if db_manager.delete_custom_report(cid):
+                                st.cache_data.clear()
+                                st.success(f"Relatório '{cname}' excluído com sucesso!")
+                                st.rerun()
 
         # Explorador de Tabelas em Título Grande com Expander Fechado
         st.markdown("---")

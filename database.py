@@ -201,6 +201,16 @@ class DatabaseManager:
         except Exception:
             return False
 
+    def update_custom_report(self, report_id: int, report_name: str, sql_query: str, description: str = "") -> bool:
+        """Atualiza a consulta SQL, nome e descrição de um relatório personalizado existente."""
+        placeholder = "%s" if self.is_postgres else "?"
+        sql = f"UPDATE custom_report SET report_name = {placeholder}, sql_query = {placeholder}, description = {placeholder} WHERE report_id = {placeholder};"
+        try:
+            self.execute_non_query(sql, (report_name.strip(), sql_query.strip(), description.strip(), report_id))
+            return True
+        except Exception:
+            return False
+
     def list_custom_reports(self) -> pd.DataFrame:
         """Lista todos os relatórios personalizados salvos pelo console SQL."""
         try:
