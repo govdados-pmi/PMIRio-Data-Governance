@@ -679,6 +679,14 @@ if "db" in tab_dict:
         st.subheader("Console SQL Live & Gerador de Relatórios Customizados")
         st.markdown("Selecione a consulta de qualquer relatório existente para visualizar o código SQL, alterar filtros e executar/salvar no banco de dados.")
 
+        # Processa atualizações pendentes solicitadas pelo botão 'Carregar no Editor' ANTES de instanciar widgets
+        if "pending_sql_query" in st.session_state and st.session_state["pending_sql_query"]:
+            st.session_state["sql_console_query_input"] = st.session_state.pop("pending_sql_query")
+        if "pending_preset_key" in st.session_state and st.session_state["pending_preset_key"]:
+            p_key = st.session_state.pop("pending_preset_key")
+            st.session_state["preset_sql_selector"] = p_key
+            st.session_state["active_preset_key"] = p_key
+
         # Carrega relatórios customizados salvos no banco
         c_reports_df = db_manager.list_custom_reports()
 
@@ -706,7 +714,7 @@ if "db" in tab_dict:
             key="preset_sql_selector"
         )
 
-        preset_data = preset_options[selected_preset_key]
+        preset_data = preset_options.get(selected_preset_key, ("manual", "", "Consulta livre"))
         preset_type = preset_data[0]
 
         # Sincroniza seleção com a área de texto
@@ -847,9 +855,8 @@ if "db" in tab_dict:
                     c_b1, c_b2 = st.columns(2)
                     with c_b1:
                         if st.button("✏️ Carregar no Editor", key=f"edit_crep_{cid}", use_container_width=True):
-                            st.session_state["sql_console_query_input"] = csql
-                            st.session_state["preset_sql_selector"] = f"📊 [Customizado] {cname}"
-                            st.session_state["active_preset_key"] = f"📊 [Customizado] {cname}"
+                            st.session_state["pending_sql_query"] = csql
+                            st.session_state["pending_preset_key"] = f"📊 [Customizado] {cname}"
                             st.rerun()
                     with c_b2:
                         if st.button("🗑️ Excluir", key=f"del_crep_{cid}", use_container_width=True):
