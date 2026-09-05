@@ -200,6 +200,7 @@ STANDARD_REPORTS_DICT = {
     "Filiados_1_Trimestre": "1º Trimestre (3M)",
     "Filiados_1_Semestre": "1º Semestre (6M)",
     "Aniversariantes_Filiacao": "Aniversariantes",
+    "Reconhecimento_Aniversariantes_Renovados": "Reconhecimento (Aniversariantes Renovados)",
     "Certificados_3_Meses": "Certificados (3M)",
     "Voluntarios_Ativos": "Voluntários Ativos"
 }
@@ -667,7 +668,22 @@ ORDER BY c.effectiveenddate ASC;""",
     v.application_service_end_date
 FROM voluntary v
 LEFT JOIN membership m ON v.personid = m.personid
-ORDER BY v.application_service_start_date DESC;"""
+ORDER BY v.application_service_start_date DESC;""",
+    "Reconhecimento — Aniversariantes Renovados": """SELECT 
+    p.personid,
+    p.fullname,
+    p.primaryemail,
+    m.isreceiveelectronicnotifications,
+    m.originaljoindate,
+    m.startdateforterm,
+    m.enddateforterm,
+    m.plannameforchapters,
+    m.autorenewstatus,
+    p.primaryphone,
+    m.tenureinyears
+FROM membership m
+JOIN person p ON p.personid = m.personid
+WHERE m.originaljoindate IS NOT NULL AND m.startdateforterm > m.originaljoindate;"""
 }
 
 
@@ -920,6 +936,11 @@ if "reports" in tab_dict:
                 "descricao": "Filiados ativos que comemoram marcas históricas de filiação (1, 3, 5, 10, 15, 20 ou 25 anos) no mês atual.",
                 "projetos": "Programa de Reconhecimento e Valorização do Filiado."
             },
+            "Reconhecimento_Aniversariantes_Renovados": {
+                "categoria": "🏆 Reconhecimento & Valorização",
+                "descricao": "Filiados que completaram aniversário de filiação no período selecionado e efetivaram a renovação de seu vínculo.",
+                "projetos": "Programa de Reconhecimento, mailing de agradecimento e métricas de retenção pós-aniversário."
+            },
             "Desfilia_Prox_30D": {
                 "categoria": "⚠️ Retenção e Risco (Churn)",
                 "descricao": "Relatório de monitoramento de risco iminente com filiações a expirar nos próximos 30 dias para alerta imediato.",
@@ -955,17 +976,7 @@ if "reports" in tab_dict:
         col_nav, col_content = st.columns([1, 3])
 
         with col_nav:
-            st.markdown("#### 📅 Mês de Extração")
-            ref_date_input = st.date_input(
-                "Data de Referência",
-                datetime.now(),
-                key="reports_ref_date_picker",
-                label_visibility="collapsed"
-            )
-            ref_date_str = ref_date_input.strftime("%Y-%m-%d")
-            st.markdown("---")
-
-            # Mapeamento completo de relatórios padrão do sistema
+            # Mapeamento prévio de chaves de relatórios padrão
             standard_reports_map = {
                 "Filiados_Ativos": ("🔵 Filiados Ativos", "Filiados_Ativos", lambda: report_manager.get_filiados_ativos(ref_date_str), "Filiados_Ativos"),
                 "Novos_Filiados_30D": ("🔵 Novos Filiados (30D)", "Novos_Filiados_30D", lambda: report_manager.get_novos_filiados_30_dias(ref_date_str), "Novos_Filiados_30D"),
@@ -973,6 +984,7 @@ if "reports" in tab_dict:
                 "Filiados_1_Trimestre": ("🔵 1º Trimestre (3M)", "Filiados_1_Trimestre", lambda: report_manager.get_filiados_1_trimestre(ref_date_str), "Filiados_1_Trimestre"),
                 "Filiados_1_Semestre": ("🔵 1º Semestre (6M)", "Filiados_1_Semestre", lambda: report_manager.get_filiados_1_semestre(ref_date_str), "Filiados_1_Semestre"),
                 "Aniversariantes_Filiacao": ("🔵 Aniversariantes de Filiação", "Aniversariantes", lambda: report_manager.get_aniversariantes_filiacao(ref_date_str), "Aniversariantes_Filiacao"),
+                "Reconhecimento_Aniversariantes_Renovados": ("🏆 Reconhecimento (Aniversariantes Renovados)", "Reconhecimento_Aniversariantes_Renovados", lambda: report_manager.get_aniversariantes_renovados(ref_start_date_str, ref_end_date_str), "Reconhecimento_Aniversariantes_Renovados"),
                 "Desfilia_Prox_30D": ("⚠️ A Vencer nos Próximos 30D", "Desfilia_Prox_30D", lambda: report_manager.get_desfiliacao_prox_30_dias(ref_date_str), "Desfilia_Prox_30D"),
                 "Desfilia_Prox_90D": ("⚠️ A Vencer nos Próximos 90D", "Desfilia_Prox_90D", lambda: report_manager.get_desfiliacao_prox_90_dias(ref_date_str), "Desfilia_Prox_90D"),
                 "Desfiliados_30D": ("⚠️ Desfiliados nos Últimos 30D", "Desfiliados_30D", lambda: report_manager.get_desfiliados_30_dias(ref_date_str), "Desfiliados_30D"),
@@ -1026,6 +1038,36 @@ if "reports" in tab_dict:
                     format_func=lambda idx: active_reports[idx][0],
                     key="vertical_report_radio_selector"
                 )
+                
+                selected_key = active_reports[selected_report_idx][3] if selected_report_idx < len(active_reports) else ""
+                
+                st.markdown("---")
+                if selected_key == "Reconhecimento_Aniversariantes_Renovados":
+                    st.markdown("#### 📅 Período de Aniversário & Renovação")
+                    ref_start_input = st.date_input(
+                        "Data Inicial (De)",
+                        datetime.now() - timedelta(days=30),
+                        key="reports_ref_start_date_picker"
+                    )
+                    ref_end_input = st.date_input(
+                        "Data Final (Até)",
+                        datetime.now(),
+                        key="reports_ref_end_date_picker"
+                    )
+                    ref_start_date_str = ref_start_input.strftime("%Y-%m-%d")
+                    ref_end_date_str = ref_end_input.strftime("%Y-%m-%d")
+                    ref_date_str = ref_end_date_str
+                else:
+                    st.markdown("#### 📅 Mês de Extração")
+                    ref_date_input = st.date_input(
+                        "Data de Referência",
+                        datetime.now(),
+                        key="reports_ref_date_picker",
+                        label_visibility="collapsed"
+                    )
+                    ref_date_str = ref_date_input.strftime("%Y-%m-%d")
+                    ref_start_date_str = ref_date_str
+                    ref_end_date_str = ref_date_str
 
         with col_content:
             if active_reports:

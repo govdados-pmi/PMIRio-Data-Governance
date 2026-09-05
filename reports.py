@@ -396,6 +396,73 @@ class ReportManager:
         df_filtered = df_filtered.drop(columns=['originaljoindate_dt'])
         return self.format_report_df(df_filtered.sort_values(by='originaljoindate', ignore_index=True))
 
+    def get_aniversariantes_renovados(self, start_date: str = None, end_date: str = None) -> pd.DataFrame:
+        """
+        Relatório de Reconhecimento: Filiados que completaram aniversário de filiação no período selecionado
+        (start_date até end_date) e cuja filiação foi renovada pós-aniversário.
+        """
+        dt_start = self.get_ref_date(start_date) if start_date else datetime.now() - timedelta(days=30)
+        dt_end = self.get_ref_date(end_date) if end_date else datetime.now()
+        
+        query = """
+        SELECT 
+            p.personid,
+            p.fullname,
+            p.primaryemail,
+            m.isreceiveelectronicnotifications,
+            m.originaljoindate,
+            m.startdateforterm,
+            m.enddateforterm,
+            m.plannameforchapters,
+            m.autorenewstatus,
+            p.primaryphone,
+            m.tenureinyears
+        FROM membership m
+        JOIN person p ON p.personid = m.personid
+        WHERE m.originaljoindate IS NOT NULL AND m.startdateforterm IS NOT NULL;
+        """
+        
+        df = db_manager.execute_query(query)
+        if df.empty:
+            return df
+        
+        df['join_dt'] = pd.to_datetime(df['originaljoindate'], errors='coerce')
+        df['start_dt'] = pd.to_datetime(df['startdateforterm'], errors='coerce')
+        df['end_dt'] = pd.to_datetime(df['enddateforterm'], errors='coerce')
+        
+        df = df.dropna(subset=['join_dt', 'start_dt']).copy()
+        if df.empty:
+            return df
+            
+        def is_anniversary_in_range(row):
+            j_dt = row['join_dt']
+            for yr in range(dt_start.year, dt_end.year + 1):
+                try:
+                    anniv = datetime(yr, j_dt.month, min(j_dt.day, 28 if j_dt.month == 2 else (30 if j_dt.month in [4,6,9,11] else 31)))
+                    if dt_start.date() <= anniv.date() <= dt_end.date():
+                        return True, anniv, yr - j_dt.year
+                except Exception:
+                    pass
+            return False, None, 0
+
+        res_rows = []
+        for _, row in df.iterrows():
+            in_range, anniv_dt, tenure_calc = is_anniversary_in_range(row)
+            if in_range:
+                if row['start_dt'] > row['join_dt'] and row['end_dt'] >= anniv_dt:
+                    row_dict = row.to_dict()
+                    row_dict['Anos de Filiação'] = max(1, tenure_calc)
+                    row_dict['Data do Aniversário no Período'] = anniv_dt.strftime("%Y-%m-%d")
+                    row_dict['Status da Renovação'] = "Renovado com Sucesso ✅"
+                    res_rows.append(row_dict)
+                    
+        if not res_rows:
+            return pd.DataFrame()
+            
+        res_df = pd.DataFrame(res_rows)
+        res_df = res_df.drop(columns=['join_dt', 'start_dt', 'end_dt'])
+        return self.format_report_df(res_df.sort_values(by='originaljoindate', ignore_index=True))
+
     def get_certificados_ultimos_3_meses(self, ref_date: str = None) -> pd.DataFrame:
         """
         Membros que obtiveram certificação nos últimos 3 meses.
