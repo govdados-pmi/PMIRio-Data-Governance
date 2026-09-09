@@ -238,6 +238,62 @@ if "users" in tab_dict:
                 cid = str(crow["report_id"])
                 all_report_options[f"custom_{cid}"] = f"📊 [Custom] {crow['report_name']}"
 
+        # ----------------------------------------------------------------------
+        # SEÇÃO: SOLICITAÇÕES DE ACESSO A RELATÓRIOS (PENDENTES)
+        # ----------------------------------------------------------------------
+        pending_reqs = db_manager.list_pending_access_requests()
+        if not pending_reqs.empty:
+            st.markdown("### 📩 Solicitações de Acesso a Relatórios Pendentes")
+            st.info(f"Existem **{len(pending_reqs)}** solicitação(ões) de acesso aguardando sua análise.")
+            
+            for _, rrow in pending_reqs.iterrows():
+                req_id = int(rrow["request_id"])
+                req_uid = int(rrow["user_id"])
+                req_uemail = str(rrow["user_email"])
+                req_uname = str(rrow["user_name"])
+                req_rkey = str(rrow["report_key"])
+                req_rname = str(rrow["report_name"])
+                req_just = str(rrow["justification"]) if pd.notna(rrow.get("justification")) and rrow.get("justification") else "Sem justificativa."
+                req_date = str(rrow["created_at"])[:16]
+                
+                with st.container():
+                    col_pr1, col_pr2, col_pr3, col_pr4 = st.columns([3, 3, 2, 2])
+                    with col_pr1:
+                        st.markdown(f"**{req_uname}**<br><small style='color: #64748B;'>{req_uemail}</small>", unsafe_allow_html=True)
+                    with col_pr2:
+                        st.markdown(f"📊 **{req_rname}**<br><small style='color: #64748B;'>Justificativa: {req_just}</small>", unsafe_allow_html=True)
+                    with col_pr3:
+                        st.caption(f"📅 {req_date}")
+                    with col_pr4:
+                        c_b1, c_b2 = st.columns(2)
+                        with c_b1:
+                            if st.button("✅ Aprovar", key=f"btn_appr_req_{req_id}", type="primary", use_container_width=True):
+                                if db_manager.approve_access_request(req_id, req_uid, req_rkey):
+                                    st.success(f"Acesso ao relatório '{req_rname}' concedido com sucesso para {req_uname}!")
+                                    st.rerun()
+                                else:
+                                    st.error("Erro ao aprovar solicitação.")
+                        with c_b2:
+                            if st.button("❌ Rejeitar", key=f"btn_rej_req_{req_id}", use_container_width=True):
+                                if db_manager.reject_access_request(req_id):
+                                    st.info(f"Solicitação de {req_uname} foi rejeitada.")
+                                    st.rerun()
+                                else:
+                                    st.error("Erro ao rejeitar solicitação.")
+                st.markdown("---")
+        else:
+            with st.expander("📩 Solicitações de Acesso a Relatórios", expanded=False):
+                st.info("Nenhuma solicitação de acesso a relatório pendente no momento.")
+
+        with st.expander("📜 Histórico Completo de Solicitações de Acesso", expanded=False):
+            all_reqs_df = db_manager.list_all_access_requests()
+            if not all_reqs_df.empty:
+                st.dataframe(all_reqs_df, use_container_width=True)
+            else:
+                st.caption("Nenhuma solicitação registrada até o momento.")
+
+        st.markdown("---")
+
         # Formulário de Cadastro de Novo Acesso em Expander Fechado
         with st.expander("➕ Cadastrar Novo Acesso", expanded=False):
             with st.form("form_add_user"):
@@ -1011,13 +1067,13 @@ if "reports" in tab_dict:
             # Une todos os relatórios disponíveis
             all_available_reports_map = {**standard_reports_map, **custom_reports_map}
 
-            # Filtra relatórios com base nas permissões do usuário
+            # Filtra chaves autorizadas do usuário para controle visual
             user_allowed_keys = []
             if role == "admin":
                 user_allowed_keys = list(all_available_reports_map.keys())
             else:
                 raw_allowed = user.get("allowed_reports")
-                if raw_allowed:
+                if raw_allowed is not None and raw_allowed != "":
                     try:
                         user_allowed_keys = json.loads(raw_allowed)
                     except Exception:
@@ -1025,21 +1081,28 @@ if "reports" in tab_dict:
                 else:
                     user_allowed_keys = list(all_available_reports_map.keys())
 
-            # Filtra tuplas ativas
-            active_reports = [all_available_reports_map[k] for k in user_allowed_keys if k in all_available_reports_map]
+            all_report_keys = list(all_available_reports_map.keys())
+            report_items = [all_available_reports_map[k] for k in all_report_keys]
 
-            if not active_reports:
-                st.warning("⚠️ Seu usuário não possui relatórios autorizados.")
+            if not report_items:
+                st.warning("⚠️ Nenhum relatório disponível no sistema.")
             else:
+                def get_radio_label(idx):
+                    item = report_items[idx]
+                    k = item[3]
+                    title = item[0]
+                    has_access = (role == "admin") or (k in user_allowed_keys)
+                    return title if has_access else f"🔒 {title} (Acesso Restrito)"
+
                 st.markdown("#### 📌 Escolha o Relatório")
                 selected_report_idx = st.radio(
                     "Selecione o Relatório:",
-                    options=range(len(active_reports)),
-                    format_func=lambda idx: active_reports[idx][0],
+                    options=range(len(report_items)),
+                    format_func=get_radio_label,
                     key="vertical_report_radio_selector"
                 )
                 
-                selected_key = active_reports[selected_report_idx][3] if selected_report_idx < len(active_reports) else ""
+                selected_key = report_items[selected_report_idx][3] if selected_report_idx < len(report_items) else ""
                 
                 st.markdown("---")
                 if selected_key == "Reconhecimento_Aniversariantes_Renovados":
@@ -1070,49 +1133,20 @@ if "reports" in tab_dict:
                     ref_end_date_str = ref_date_str
 
         with col_content:
-            if active_reports:
-                selected_idx = min(max(0, selected_report_idx if 'selected_report_idx' in locals() else 0), len(active_reports) - 1)
-                title, filename, func, report_key = active_reports[selected_idx]
-                try:
-                    df = func()
-                    
-                    # Cabeçalho Compacto: Título + Downloads na Mesma Linha
-                    col_t1, col_t2 = st.columns([1.1, 1.4])
-                    with col_t1:
-                        st.markdown(f"### {title}")
-                        st.markdown(f"**Total de registros encontrados:** `{len(df)}`")
-                    with col_t2:
-                        c_dl1, c_dl2 = st.columns(2)
-                        with c_dl1:
-                            st.download_button(
-                                "⬇️ Baixar em CSV",
-                                data=df.to_csv(index=False).encode('utf-8'),
-                                file_name=f"{filename}_{ref_date_str}.csv",
-                                mime="text/csv",
-                                type="primary",
-                                key=f"dl_csv_{selected_report_idx}_{filename}",
-                                use_container_width=True
-                            )
-                        with c_dl2:
-                            bio = tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx')
-                            df.to_excel(bio.name, index=False)
-                            with open(bio.name, "rb") as f:
-                                st.download_button(
-                                    "⬇️ Baixar em Excel",
-                                    data=f.read(),
-                                    file_name=f"{filename}_{ref_date_str}.xlsx",
-                                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                    type="primary",
-                                    key=f"dl_xlsx_{selected_report_idx}_{filename}",
-                                    use_container_width=True
-                                )
-                    
-                    # Card Informativo de Metadados do Catálogo de Dados (Fechado por Padrão)
-                    meta_item = report_meta_info.get(report_key, {
-                        "categoria": "📊 Relatórios Customizados",
-                        "descricao": "Consulta SQL personalizada criada no Console.",
-                        "projetos": "Análises sob demanda e relatórios Ad-Hoc da Diretoria."
-                    })
+            if report_items:
+                selected_idx = min(max(0, selected_report_idx if 'selected_report_idx' in locals() else 0), len(report_items) - 1)
+                title, filename, func, report_key = report_items[selected_idx]
+                has_access = (role == "admin") or (report_key in user_allowed_keys)
+
+                meta_item = report_meta_info.get(report_key, {
+                    "categoria": "📊 Relatórios Customizados",
+                    "descricao": "Consulta SQL personalizada criada no Console.",
+                    "projetos": "Análises sob demanda e relatórios Ad-Hoc da Diretoria."
+                })
+
+                if not has_access:
+                    # USUÁRIO NÃO POSSUI ACESSO A ESTE RELATÓRIO
+                    st.warning("🔒 **Acesso Restrito ao Relatório**\n\nVocê não possui permissão para visualizar os dados deste relatório. Confira abaixo a documentação do catálogo e solicite acesso ao administrador.")
                     
                     with st.expander("📖 Dicionário de Dados & Informações do Catálogo", expanded=True):
                         col_m1, col_m2 = st.columns(2)
@@ -1122,19 +1156,14 @@ if "reports" in tab_dict:
                         with col_m2:
                             st.markdown(f"**🚀 Projetos em Utilização:** {meta_item['projetos']}")
                             
-                            # Busca dinâmica de todos os usuários (Admins + Visualizadores com permissão)
                             users_all_df = db_manager.list_users()
                             authorized_user_names = []
-
                             if not users_all_df.empty:
                                 for _, u_row in users_all_df.iterrows():
-                                    u_active = bool(u_row.get("is_active", True))
-                                    if not u_active:
+                                    if not bool(u_row.get("is_active", True)):
                                         continue
-                                        
                                     u_role = str(u_row.get("role", "view"))
                                     u_name = str(u_row.get("full_name", u_row.get("email", "")))
-                                    
                                     if u_role == "admin":
                                         authorized_user_names.append(f"{u_name} (👑 Admin)")
                                     else:
@@ -1148,14 +1177,114 @@ if "reports" in tab_dict:
                                                 pass
                                         else:
                                             authorized_user_names.append(f"{u_name} (👁️ Visualização)")
-
                             perm_text = ", ".join(authorized_user_names) if authorized_user_names else "Nenhum usuário cadastrado."
                             st.markdown(f"**🔒 Quem Tem Acesso:** {perm_text}")
 
                     st.markdown("---")
-                    st.dataframe(df, use_container_width=True)
-                except Exception as err:
-                    st.error(f"Erro ao carregar o relatório '{title}': {err}")
+                    st.subheader("📩 Pedir Acesso a Este Relatório")
+
+                    user_reqs = db_manager.get_user_access_requests(user["user_id"])
+                    pending_for_this = pd.DataFrame()
+                    if not user_reqs.empty:
+                        pending_for_this = user_reqs[(user_reqs["report_key"] == report_key) & (user_reqs["status"] == "pending")]
+
+                    if not pending_for_this.empty:
+                        req_date = str(pending_for_this.iloc[0]["created_at"])[:16]
+                        st.info(f"⏳ **Solicitação de Acesso Pendente**\n\nSua solicitação de acesso para este relatório foi enviada em **{req_date}** e está aguardando aprovação do administrador.")
+                    else:
+                        was_rejected = False
+                        if not user_reqs.empty:
+                            rejected_for_this = user_reqs[(user_reqs["report_key"] == report_key) & (user_reqs["status"] == "rejected")]
+                            if not rejected_for_this.empty:
+                                was_rejected = True
+
+                        if was_rejected:
+                            st.caption("⚠️ Uma solicitação prévia foi indeferida. Caso necessário, você pode enviar uma nova solicitação com justificativa detalhada.")
+
+                        with st.form(f"form_req_access_{report_key}"):
+                            st.markdown(f"Solicitar permissão de acesso para o relatório **{title}**:")
+                            justification = st.text_area("Justificativa / Motivo da Solicitação:", placeholder="Ex: Preciso de acesso a estes dados para o projeto de retenção da diretoria de filiação...")
+                            submit_req = st.form_submit_button("📩 Enviar Solicitação de Acesso", type="primary", use_container_width=True)
+                            if submit_req:
+                                if db_manager.create_access_request(user["user_id"], user["email"], user["full_name"], report_key, title, justification):
+                                    st.success("🎉 Solicitação de acesso enviada com sucesso! O administrador receberá seu pedido no painel de Gestão de Acessos.")
+                                    st.rerun()
+                                else:
+                                    st.error("Erro ao registrar a solicitação. Tente novamente.")
+
+                else:
+                    # USUÁRIO POSSUI ACESSO AO RELATÓRIO
+                    try:
+                        df = func()
+                        
+                        col_t1, col_t2 = st.columns([1.1, 1.4])
+                        with col_t1:
+                            st.markdown(f"### {title}")
+                            st.markdown(f"**Total de registros encontrados:** `{len(df)}`")
+                        with col_t2:
+                            c_dl1, c_dl2 = st.columns(2)
+                            with c_dl1:
+                                st.download_button(
+                                    "⬇️ Baixar em CSV",
+                                    data=df.to_csv(index=False).encode('utf-8'),
+                                    file_name=f"{filename}_{ref_date_str}.csv",
+                                    mime="text/csv",
+                                    type="primary",
+                                    key=f"dl_csv_{selected_report_idx}_{filename}",
+                                    use_container_width=True
+                                )
+                            with c_dl2:
+                                bio = tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx')
+                                df.to_excel(bio.name, index=False)
+                                with open(bio.name, "rb") as f:
+                                    st.download_button(
+                                        "⬇️ Baixar em Excel",
+                                        data=f.read(),
+                                        file_name=f"{filename}_{ref_date_str}.xlsx",
+                                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                        type="primary",
+                                        key=f"dl_xlsx_{selected_report_idx}_{filename}",
+                                        use_container_width=True
+                                    )
+                        
+                        with st.expander("📖 Dicionário de Dados & Informações do Catálogo", expanded=False):
+                            col_m1, col_m2 = st.columns(2)
+                            with col_m1:
+                                st.markdown(f"**📂 Categoria:** {meta_item['categoria']}")
+                                st.markdown(f"**🎯 Descrição da Base:** {meta_item['descricao']}")
+                            with col_m2:
+                                st.markdown(f"**🚀 Projetos em Utilização:** {meta_item['projetos']}")
+                                
+                                users_all_df = db_manager.list_users()
+                                authorized_user_names = []
+
+                                if not users_all_df.empty:
+                                    for _, u_row in users_all_df.iterrows():
+                                        if not bool(u_row.get("is_active", True)):
+                                            continue
+                                        u_role = str(u_row.get("role", "view"))
+                                        u_name = str(u_row.get("full_name", u_row.get("email", "")))
+                                        if u_role == "admin":
+                                            authorized_user_names.append(f"{u_name} (👑 Admin)")
+                                        else:
+                                            raw_allowed = u_row.get("allowed_reports")
+                                            if raw_allowed:
+                                                try:
+                                                    allowed_list = json.loads(raw_allowed)
+                                                    if report_key in allowed_list:
+                                                        authorized_user_names.append(f"{u_name} (👁️ Visualização)")
+                                                except Exception:
+                                                    pass
+                                            else:
+                                                authorized_user_names.append(f"{u_name} (👁️ Visualização)")
+
+                                perm_text = ", ".join(authorized_user_names) if authorized_user_names else "Nenhum usuário cadastrado."
+                                st.markdown(f"**🔒 Quem Tem Acesso:** {perm_text}")
+
+                        st.markdown("---")
+                        st.dataframe(df, use_container_width=True)
+                    except Exception as err:
+                        st.error(f"Erro ao carregar o relatório '{title}': {err}")
 
 
 

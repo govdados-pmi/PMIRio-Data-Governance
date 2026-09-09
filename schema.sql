@@ -83,3 +83,16 @@ CREATE TABLE custom_report (
     created_by VARCHAR,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+-- 7. Criação da Tabela REPORT_ACCESS_REQUEST (Solicitações de Acesso a Relatórios)
+CREATE TABLE report_access_request (
+    request_id SERIAL PRIMARY KEY,
+    user_id INT NOT NULL,
+    user_email VARCHAR NOT NULL,
+    user_name VARCHAR NOT NULL,
+    report_key VARCHAR NOT NULL,
+    report_name VARCHAR NOT NULL,
+    justification TEXT,
+    status VARCHAR NOT NULL DEFAULT 'pending', -- 'pending', 'approved', 'rejected'
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);

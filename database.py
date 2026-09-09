@@ -76,11 +76,28 @@ class DatabaseManager:
 
     def init_db(self, schema_file: Optional[str] = None):
         """
-        Verifica a conectividade com o banco de dados.
-        A estrutura de tabelas (DDL) já está criada no PostgreSQL/Supabase.
+        Verifica a conectividade com o banco de dados e assegura que a tabela
+        report_access_request exista.
         """
         try:
             conn = self.get_connection()
+            cur = conn.cursor()
+            id_type = "SERIAL PRIMARY KEY" if self.is_postgres else "INTEGER PRIMARY KEY AUTOINCREMENT"
+            cur.execute(f"""
+            CREATE TABLE IF NOT EXISTS report_access_request (
+                request_id {id_type},
+                user_id INT NOT NULL,
+                user_email VARCHAR NOT NULL,
+                user_name VARCHAR NOT NULL,
+                report_key VARCHAR NOT NULL,
+                report_name VARCHAR NOT NULL,
+                justification TEXT,
+                status VARCHAR NOT NULL DEFAULT 'pending',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            """)
+            conn.commit()
+            cur.close()
             conn.close()
         except Exception:
             pass
@@ -224,6 +241,89 @@ class DatabaseManager:
         sql = f"DELETE FROM custom_report WHERE report_id = {placeholder};"
         try:
             self.execute_non_query(sql, (report_id,))
+            return True
+        except Exception:
+            return False
+
+    def create_access_request(self, user_id: int, user_email: str, user_name: str, report_key: str, report_name: str, justification: str = "") -> bool:
+        """Cria uma solicitação de acesso a um relatório."""
+        placeholder = "%s" if self.is_postgres else "?"
+        sql = f"""
+        INSERT INTO report_access_request (user_id, user_email, user_name, report_key, report_name, justification, status)
+        VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, 'pending');
+        """
+        try:
+            self.execute_non_query(sql, (user_id, user_email.strip(), user_name.strip(), report_key.strip(), report_name.strip(), justification.strip()))
+            return True
+        except Exception:
+            return False
+
+    def get_user_access_requests(self, user_id: int) -> pd.DataFrame:
+        """Retorna todas as solicitações de acesso de um determinado usuário."""
+        placeholder = "%s" if self.is_postgres else "?"
+        query = f"SELECT request_id, report_key, report_name, justification, status, created_at FROM report_access_request WHERE user_id = {placeholder} ORDER BY created_at DESC;"
+        try:
+            return self.execute_query(query, (user_id,))
+        except Exception:
+            return pd.DataFrame()
+
+    def list_pending_access_requests(self) -> pd.DataFrame:
+        """Retorna todas as solicitações de acesso pendentes de aprovação."""
+        query = "SELECT request_id, user_id, user_email, user_name, report_key, report_name, justification, status, created_at FROM report_access_request WHERE status = 'pending' ORDER BY created_at ASC;"
+        try:
+            return self.execute_query(query)
+        except Exception:
+            return pd.DataFrame()
+
+    def list_all_access_requests(self) -> pd.DataFrame:
+        """Retorna histórico de todas as solicitações de acesso."""
+        query = "SELECT request_id, user_id, user_email, user_name, report_key, report_name, justification, status, created_at FROM report_access_request ORDER BY created_at DESC;"
+        try:
+            return self.execute_query(query)
+        except Exception:
+            return pd.DataFrame()
+
+    def approve_access_request(self, request_id: int, user_id: int, report_key: str) -> bool:
+        """Aprova a solicitação de acesso e adiciona o relatório à lista do usuário."""
+        import json
+        placeholder = "%s" if self.is_postgres else "?"
+        conn = self.get_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute(f"SELECT allowed_reports FROM app_user WHERE user_id = {placeholder};", (user_id,))
+            row = cur.fetchone()
+            current_allowed = []
+            if row and row[0]:
+                try:
+                    current_allowed = json.loads(row[0])
+                except Exception:
+                    current_allowed = []
+            
+            if report_key not in current_allowed:
+                current_allowed.append(report_key)
+            
+            new_allowed_json = json.dumps(current_allowed)
+            cur.execute(f"UPDATE app_user SET allowed_reports = {placeholder} WHERE user_id = {placeholder};", (new_allowed_json, user_id))
+            cur.execute(f"UPDATE report_access_request SET status = 'approved' WHERE request_id = {placeholder};", (request_id,))
+            conn.commit()
+            cur.close()
+            try:
+                st.cache_data.clear()
+            except Exception:
+                pass
+            return True
+        except Exception:
+            conn.rollback()
+            return False
+        finally:
+            conn.close()
+
+    def reject_access_request(self, request_id: int) -> bool:
+        """Rejeita uma solicitação de acesso a relatório."""
+        placeholder = "%s" if self.is_postgres else "?"
+        sql = f"UPDATE report_access_request SET status = 'rejected' WHERE request_id = {placeholder};"
+        try:
+            self.execute_non_query(sql, (request_id,))
             return True
         except Exception:
             return False
