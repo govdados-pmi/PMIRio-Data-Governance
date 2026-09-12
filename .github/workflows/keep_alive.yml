@@ -1,0 +1,33 @@
+name: Keep Alive Streamlit App
+
+on:
+  schedule:
+    # Executa a cada 6 horas (00:00, 06:00, 12:00, 18:00 UTC)
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+
+jobs:
+  keep-alive:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout do Repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: 'requirements.txt'
+
+      - name: Instalar Dependências de Automação
+        run: |
+          python -m pip install --upgrade pip
+          pip install selenium
+
+      - name: Executar Automação Selenium (Keep-Alive)
+        env:
+          APP_URL: ${{ secrets.APP_URL || 'https://pmirio-govdados.streamlit.app/' }}
+        run: |
+          python keep_alive.py

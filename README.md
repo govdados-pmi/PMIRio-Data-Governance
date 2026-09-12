@@ -78,3 +78,15 @@ Acesse em seu navegador em `http://localhost:8501`.
 Por questões de segurança e conformidade com a LGPD:
 - Arquivos `.xlsx`, `.csv`, `.db` e diretórios com planilhas reais da diretoria estão **estritamente ignorados no `.gitignore`** e não devem ser enviados para o repositório público.
 - Credenciais e strings de conexão de banco de dados devem ser mantidas em Variáveis de Ambiente ou configuradas no **Streamlit Secrets**.
+
+---
+
+## ⚡ Automação Keep-Alive (GitHub Actions + Selenium)
+
+Para evitar que a aplicação no Streamlit Cloud entre em modo de suspensão (*sleep mode*) por inatividade, o repositório conta com uma automação agendada:
+
+- **Frequência**: Executa automaticamente a cada 6 horas (`0 */6 * * *`).
+- **Automação**: Utiliza Selenium em modo Headless para acessar `https://pmirio-govdados.streamlit.app/`, aguardar o carregamento e manter o serviço ativo.
+- **Configuração de URL**: É possível sobrescrever a URL padrão adicionando o Secret `APP_URL` nas configurações do repositório no GitHub (**Settings** > **Secrets and variables** > **Actions**).
+- **Execução Manual**: A Action pode ser disparada manualmente a qualquer momento pela aba **Actions** no GitHub (*Workflow Dispatch*).
+
