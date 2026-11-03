@@ -16,6 +16,7 @@ venv.bak/
 *.sqlite
 *.sqlite3
 planilhas/
+datalake/
 *.xlsx
 *.xls
 *.csv

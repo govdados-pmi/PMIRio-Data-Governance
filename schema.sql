@@ -96,3 +96,15 @@ CREATE TABLE report_access_request (
     status VARCHAR NOT NULL DEFAULT 'pending', -- 'pending', 'approved', 'rejected'
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+-- 8. Criação da Tabela DATALAKE_RAW_FILES (Histórico Bruto Imutável de Ingestões)
+CREATE TABLE datalake_raw_files (
+    file_id SERIAL PRIMARY KEY,
+    filename VARCHAR NOT NULL,
+    file_hash VARCHAR(64) NOT NULL,
+    file_size_bytes BIGINT NOT NULL,
+    record_count INT DEFAULT 0,
+    source VARCHAR DEFAULT 'thoughtspot_email',
+    file_content BYTEA,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);

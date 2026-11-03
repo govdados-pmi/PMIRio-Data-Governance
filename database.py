@@ -328,6 +328,49 @@ class DatabaseManager:
         except Exception:
             return False
 
+    def save_datalake_file(self, filename: str, file_bytes: bytes, record_count: int = 0, source: str = "thoughtspot_email") -> Optional[int]:
+        """Salva uma cópia bruta imutável do arquivo no Data Lake com hash SHA-256."""
+        import hashlib
+        file_hash = hashlib.sha256(file_bytes).hexdigest()
+        file_size = len(file_bytes)
+        conn = self.get_connection()
+        try:
+            cur = conn.cursor()
+            if self.is_postgres:
+                import psycopg2
+                sql = """
+                INSERT INTO datalake_raw_files (filename, file_hash, file_size_bytes, record_count, source, file_content)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                RETURNING file_id;
+                """
+                cur.execute(sql, (filename, file_hash, file_size, record_count, source, psycopg2.Binary(file_bytes)))
+                row = cur.fetchone()
+                file_id = row[0] if row else None
+            else:
+                placeholder = "?"
+                sql = f"""
+                INSERT INTO datalake_raw_files (filename, file_hash, file_size_bytes, record_count, source, file_content)
+                VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder});
+                """
+                cur.execute(sql, (filename, file_hash, file_size, record_count, source, sqlite3.Binary(file_bytes)))
+                file_id = cur.lastrowid
+            conn.commit()
+            cur.close()
+            return file_id
+        except Exception:
+            conn.rollback()
+            return None
+        finally:
+            conn.close()
+
+    def list_datalake_files(self, limit: int = 50) -> pd.DataFrame:
+        """Lista os arquivos brutos armazenados no Data Lake (sem baixar os bytes do conteúdo)."""
+        query = f"SELECT file_id, filename, file_hash, file_size_bytes, record_count, source, created_at FROM datalake_raw_files ORDER BY created_at DESC LIMIT {limit};"
+        try:
+            return self.execute_query(query)
+        except Exception:
+            return pd.DataFrame()
+
     def execute_query(self, query: str, params: Optional[Union[tuple, dict]] = None) -> pd.DataFrame:
         """
         Executa uma consulta SQL e retorna um DataFrame do Pandas.

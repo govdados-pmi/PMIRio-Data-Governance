@@ -533,6 +533,56 @@ if "etl" in tab_dict:
                     with m6:
                         st.metric("Certificações Inseridas", res_c.get("certifications_inserted", 0))
 
+        # ----------------------------------------------------------------------
+        # SEÇÃO: HISTÓRICO DO DATA LAKE & SINCRONIZAÇÃO AUTOMÁTICA
+        # ----------------------------------------------------------------------
+        st.markdown("---")
+        st.subheader("📦 Data Lake — Arquivos Brutos & Automação")
+        st.markdown("Histórico de cópias brutas de planilhas recebidas do ThoughtSpot e armazenadas no Data Lake.")
+        
+        c_sync1, c_sync2 = st.columns([3, 1])
+        with c_sync1:
+            st.info("⏰ A sincronização do e-mail executa automaticamente todos os dias às **10:15 BRT** via GitHub Actions.")
+        with c_sync2:
+            if st.button("🔄 Sincronizar E-mail Agora", type="secondary", width="stretch"):
+                with st.spinner("Conectando ao Gmail e buscando novas planilhas..."):
+                    try:
+                        from email_ingestion import EmailDataLakeIngestion
+                        syncer = EmailDataLakeIngestion()
+                        res_sync = syncer.sync_latest_filiados()
+                        if res_sync.get("status") == "success":
+                            st.success(res_sync.get("message"))
+                            st.cache_data.clear()
+                            st.rerun()
+                        elif res_sync.get("status") == "up_to_date":
+                            st.info("Tudo atualizado! Nenhum novo anexo pendente.")
+                        else:
+                            st.warning(res_sync.get("message"))
+                    except Exception as e:
+                        st.error(f"Erro na sincronização: {e}")
+
+        # Tabela com histórico do Data Lake
+        datalake_df = db_manager.list_datalake_files(limit=20)
+        if not datalake_df.empty:
+            datalake_display = datalake_df.copy()
+            if "created_at" in datalake_display.columns:
+                datalake_display["created_at"] = pd.to_datetime(datalake_display["created_at"]).dt.strftime("%d/%m/%Y %H:%M")
+            if "file_size_bytes" in datalake_display.columns:
+                datalake_display["Tamanho"] = datalake_display["file_size_bytes"].apply(lambda b: f"{b/1024:.1f} KB" if b < 1024*1024 else f"{b/(1024*1024):.2f} MB")
+                datalake_display = datalake_display.drop(columns=["file_size_bytes"])
+            datalake_display = datalake_display.rename(columns={
+                "file_id": "ID",
+                "filename": "Arquivo",
+                "file_hash": "Hash SHA-256",
+                "record_count": "Registros",
+                "source": "Origem",
+                "created_at": "Data/Hora"
+            })
+            st.dataframe(datalake_display, width="stretch", hide_index=True)
+        else:
+            st.caption("Nenhum arquivo gravado no Data Lake até o momento.")
+
+
 
 
 # Dicionário de Consultas SQL Padrão do Sistema
