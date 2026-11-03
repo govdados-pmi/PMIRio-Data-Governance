@@ -35,7 +35,29 @@ def decode_mime_words(s: Optional[str]) -> str:
             result.append(frag.decode(enc or "utf-8", errors="ignore"))
         else:
             result.append(str(frag))
-    return "".join(result)
+def detect_dataset_type(filename: str, file_path: str = None) -> str:
+    """Detecta automaticamente se a planilha é de filiados, certificações ou voluntários."""
+    fn_lower = filename.lower()
+    if any(k in fn_lower for k in ["certif", "pmp", "capm", "acp", "pgmp", "pfmp"]):
+        return "certificacoes"
+    if any(k in fn_lower for k in ["volunt", "candidat", "opportunit"]):
+        return "voluntarios"
+    if any(k in fn_lower for k in ["filiad", "member", "membership"]):
+        return "filiados"
+    
+    # Se o nome for genérico, inspeciona as colunas da planilha
+    if file_path and os.path.exists(file_path):
+        try:
+            from etl import auto_read_excel
+            sample_df = auto_read_excel(file_path)
+            cols_str = " ".join([str(c).lower() for c in sample_df.columns])
+            if any(k in cols_str for k in ["certification", "certificacao", "grantdate", "cycleseqno"]):
+                return "certificacoes"
+            if any(k in cols_str for k in ["applicant", "opportunity", "application_status"]):
+                return "voluntarios"
+        except Exception:
+            pass
+    return "filiados"
 
 class EmailDataLakeIngestion:
     def __init__(self):
@@ -164,19 +186,32 @@ class EmailDataLakeIngestion:
                         f.write(file_bytes)
                     print(f"💾 Cópia salva no Data Lake local: {local_file_path}")
 
-                    # 2. Executa Pipeline ETL de Ingestão de Filiados
-                    print("🚀 Iniciando ingestão no banco de dados Supabase via pipeline.process_members()...")
-                    etl_res = pipeline.process_members([local_file_path])
-                    record_count = etl_res.get("details", {}).get("memberships_inserted", 0) + etl_res.get("details", {}).get("memberships_updated", 0)
+                    # 2. Detecta o tipo de base e executa o Pipeline correspondente
+                    detected_type = detect_dataset_type(filename, local_file_path)
+                    print(f"🔍 Tipo de base detectada: {detected_type.upper()}")
+
+                    if detected_type == "certificacoes":
+                        print("🚀 Iniciando ingestão de Certificações via pipeline.process_certifications()...")
+                        etl_res = pipeline.process_certifications([local_file_path])
+                        record_count = etl_res.get("certifications_inserted", 0)
+                    elif detected_type == "voluntarios":
+                        print("🚀 Iniciando ingestão de Voluntários via pipeline.process_volunteers()...")
+                        etl_res = pipeline.process_volunteers(local_file_path)
+                        record_count = etl_res.get("volunteers_inserted", 0)
+                    else:
+                        print("🚀 Iniciando ingestão de Filiados via pipeline.process_members()...")
+                        etl_res = pipeline.process_members([local_file_path])
+                        record_count = etl_res.get("details", {}).get("memberships_inserted", 0) + etl_res.get("details", {}).get("memberships_updated", 0)
 
                     # 3. Salva cópia imutável no Data Lake do Supabase (datalake_raw_files)
                     datalake_id = db_manager.save_datalake_file(
                         filename=filename,
                         file_bytes=file_bytes,
                         record_count=record_count,
-                        source="thoughtspot_email"
+                        source="thoughtspot_email",
+                        data_type=detected_type
                     )
-                    print(f"✅ Arquivo registrado no Data Lake do Supabase (ID: {datalake_id})!")
+                    print(f"✅ Arquivo registrado no Data Lake do Supabase (ID: {datalake_id}) sob categoria '{detected_type}'!")
                     print(f"Resultado do ETL: {etl_res}")
 
                     processed_count += 1

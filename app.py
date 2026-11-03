@@ -570,6 +570,14 @@ if "etl" in tab_dict:
             if "file_size_bytes" in datalake_display.columns:
                 datalake_display["Tamanho"] = datalake_display["file_size_bytes"].apply(lambda b: f"{b/1024:.1f} KB" if b < 1024*1024 else f"{b/(1024*1024):.2f} MB")
                 datalake_display = datalake_display.drop(columns=["file_size_bytes"])
+            if "data_type" in datalake_display.columns:
+                type_badge_map = {
+                    "filiados": "🔵 Filiados",
+                    "certificacoes": "🎓 Certificações",
+                    "voluntarios": "🤝 Voluntários"
+                }
+                datalake_display["Tipo"] = datalake_display["data_type"].map(type_badge_map).fillna("Base de Dados")
+                datalake_display = datalake_display.drop(columns=["data_type"])
             datalake_display = datalake_display.rename(columns={
                 "file_id": "ID",
                 "filename": "Arquivo",
@@ -1332,7 +1340,21 @@ if "reports" in tab_dict:
                                 st.markdown(f"**🔒 Quem Tem Acesso:** {perm_text}")
 
                         st.markdown("---")
-                        st.dataframe(df, use_container_width=True)
+                        st.dataframe(df, width="stretch")
+                        
+                        # Exibe data e hora da última atualização de acordo com o tipo do relatório
+                        if report_key in ["Certificados_3_Meses", "Certificacoes_Expirando_Mes"]:
+                            dtype = "certificacoes"
+                        elif report_key == "Voluntarios_Ativos":
+                            dtype = "voluntarios"
+                        else:
+                            dtype = "filiados"
+
+                        last_upd = db_manager.get_last_data_update_info(data_type=dtype)
+                        if last_upd:
+                            st.caption(f"🕒 **Dados de {last_upd['data_type']} atualizados pela última vez em:** {last_upd['formatted']} (Horário de Brasília) • **Fonte:** {last_upd['source']}")
+                        else:
+                            st.caption(f"🕒 **Dados de {dtype.capitalize()}:** Base sincronizada com o banco de dados.")
                     except Exception as err:
                         st.error(f"Erro ao carregar o relatório '{title}': {err}")
 

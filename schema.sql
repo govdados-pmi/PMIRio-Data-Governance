@@ -105,6 +105,7 @@ CREATE TABLE datalake_raw_files (
     file_size_bytes BIGINT NOT NULL,
     record_count INT DEFAULT 0,
     source VARCHAR DEFAULT 'thoughtspot_email',
+    data_type VARCHAR DEFAULT 'filiados', -- 'filiados', 'certificacoes', 'voluntarios'
     file_content BYTEA,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );

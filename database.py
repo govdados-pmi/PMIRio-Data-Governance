@@ -328,8 +328,8 @@ class DatabaseManager:
         except Exception:
             return False
 
-    def save_datalake_file(self, filename: str, file_bytes: bytes, record_count: int = 0, source: str = "thoughtspot_email") -> Optional[int]:
-        """Salva uma cópia bruta imutável do arquivo no Data Lake com hash SHA-256."""
+    def save_datalake_file(self, filename: str, file_bytes: bytes, record_count: int = 0, source: str = "thoughtspot_email", data_type: str = "filiados") -> Optional[int]:
+        """Salva uma cópia bruta imutável do arquivo no Data Lake com hash SHA-256 e tipo de dados."""
         import hashlib
         file_hash = hashlib.sha256(file_bytes).hexdigest()
         file_size = len(file_bytes)
@@ -339,20 +339,20 @@ class DatabaseManager:
             if self.is_postgres:
                 import psycopg2
                 sql = """
-                INSERT INTO datalake_raw_files (filename, file_hash, file_size_bytes, record_count, source, file_content)
-                VALUES (%s, %s, %s, %s, %s, %s)
+                INSERT INTO datalake_raw_files (filename, file_hash, file_size_bytes, record_count, source, data_type, file_content)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
                 RETURNING file_id;
                 """
-                cur.execute(sql, (filename, file_hash, file_size, record_count, source, psycopg2.Binary(file_bytes)))
+                cur.execute(sql, (filename, file_hash, file_size, record_count, source, data_type, psycopg2.Binary(file_bytes)))
                 row = cur.fetchone()
                 file_id = row[0] if row else None
             else:
                 placeholder = "?"
                 sql = f"""
-                INSERT INTO datalake_raw_files (filename, file_hash, file_size_bytes, record_count, source, file_content)
-                VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder});
+                INSERT INTO datalake_raw_files (filename, file_hash, file_size_bytes, record_count, source, data_type, file_content)
+                VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder});
                 """
-                cur.execute(sql, (filename, file_hash, file_size, record_count, source, sqlite3.Binary(file_bytes)))
+                cur.execute(sql, (filename, file_hash, file_size, record_count, source, data_type, sqlite3.Binary(file_bytes)))
                 file_id = cur.lastrowid
             conn.commit()
             cur.close()
@@ -365,11 +365,91 @@ class DatabaseManager:
 
     def list_datalake_files(self, limit: int = 50) -> pd.DataFrame:
         """Lista os arquivos brutos armazenados no Data Lake (sem baixar os bytes do conteúdo)."""
-        query = f"SELECT file_id, filename, file_hash, file_size_bytes, record_count, source, created_at FROM datalake_raw_files ORDER BY created_at DESC LIMIT {limit};"
+        query = f"SELECT file_id, filename, file_hash, file_size_bytes, record_count, source, data_type, created_at FROM datalake_raw_files ORDER BY created_at DESC LIMIT {limit};"
         try:
             return self.execute_query(query)
         except Exception:
             return pd.DataFrame()
+
+    def get_last_data_update_info(self, data_type: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        """
+        Retorna informações sobre a última atualização de acordo com o tipo:
+        'filiados', 'certificacoes', 'voluntarios' ou geral se None.
+        """
+        try:
+            placeholder = "%s" if self.is_postgres else "?"
+            where_clause = f"WHERE data_type = {placeholder}" if data_type else ""
+            params = (data_type,) if data_type else None
+            
+            df = self.execute_query(
+                f"SELECT filename, created_at, record_count, source, data_type FROM datalake_raw_files {where_clause} ORDER BY created_at DESC LIMIT 1;",
+                params
+            )
+            if not df.empty:
+                row = df.iloc[0]
+                dt = pd.to_datetime(row["created_at"])
+                if dt.tzinfo is None:
+                    dt_br = dt - pd.Timedelta(hours=3)
+                else:
+                    dt_br = dt.tz_convert("America/Sao_Paulo")
+                
+                type_labels = {
+                    "filiados": "Filiados",
+                    "certificacoes": "Certificações",
+                    "voluntarios": "Voluntários"
+                }
+                curr_type = str(row.get("data_type", "filiados")).lower()
+                type_label = type_labels.get(curr_type, "Base de Dados")
+                
+                return {
+                    "timestamp": dt_br,
+                    "formatted": dt_br.strftime("%d/%m/%Y às %H:%M"),
+                    "filename": str(row["filename"]),
+                    "source": str(row.get("source", "Data Lake")),
+                    "data_type": type_label
+                }
+            
+            # Fallbacks caso o Data Lake ainda não tenha registro para este tipo específico
+            if data_type == "certificacoes":
+                df_c = self.execute_query("SELECT count(*) as total, max(originalgrantdate) as max_d FROM certification;")
+                if not df_c.empty and df_c.iloc[0]["total"] > 0:
+                    max_d = str(df_c.iloc[0]["max_d"])
+                    return {
+                        "timestamp": None,
+                        "formatted": f"Última concessão registrada: {max_d}",
+                        "filename": "Carga de Certificações",
+                        "source": "ETL",
+                        "data_type": "Certificações"
+                    }
+            elif data_type == "voluntarios":
+                df_v = self.execute_query("SELECT count(*) as total, max(application_service_start_date) as max_d FROM voluntary;")
+                if not df_v.empty and df_v.iloc[0]["total"] > 0:
+                    max_d = str(df_v.iloc[0]["max_d"])
+                    return {
+                        "timestamp": None,
+                        "formatted": f"Última candidatura registrada: {max_d}",
+                        "filename": "Carga de Voluntários",
+                        "source": "ETL",
+                        "data_type": "Voluntários"
+                    }
+            else:
+                df_hist = self.execute_query("SELECT changed_at FROM person_history ORDER BY changed_at DESC LIMIT 1;")
+                if not df_hist.empty:
+                    dt = pd.to_datetime(df_hist.iloc[0]["changed_at"])
+                    if dt.tzinfo is None:
+                        dt_br = dt - pd.Timedelta(hours=3)
+                    else:
+                        dt_br = dt.tz_convert("America/Sao_Paulo")
+                    return {
+                        "timestamp": dt_br,
+                        "formatted": dt_br.strftime("%d/%m/%Y às %H:%M"),
+                        "filename": "Atualização Cadastral",
+                        "source": "ETL",
+                        "data_type": "Filiados"
+                    }
+        except Exception:
+            pass
+        return None
 
     def execute_query(self, query: str, params: Optional[Union[tuple, dict]] = None) -> pd.DataFrame:
         """
