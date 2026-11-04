@@ -123,9 +123,12 @@ SELECT
     c.total_cycleseqno AS "Qtde_Ciclos"
 FROM certification c;
 
-CREATE OR REPLACE VIEW vw_looker_filiacoes AS
+DROP VIEW IF EXISTS vw_looker_filiacoes;
+
+CREATE VIEW vw_looker_filiacoes AS
 SELECT 
-    m_month::date AS "Memberdatayearmonth-dateformat",
+    m_month::date AS "Memberdatayearmonth_dateformat",
+    m_month::date AS "Memberdatayearmonth",
     p.personid AS "Personid",
     p.fullname AS "Fullname",
     p.industry AS "Industry",
