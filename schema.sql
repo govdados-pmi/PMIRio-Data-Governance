@@ -151,7 +151,15 @@ SELECT
     'yes'::text AS "Isactive",
     m.isreceiveelectronicnotifications AS "Isreceiveelectronicnotifications",
     CASE WHEN m_month::date = DATE_TRUNC('month', m.enddateforterm)::date THEN 'yes' ELSE 'no' END AS "IsCurrentExpiration",
-    CASE WHEN (m_month::date = DATE_TRUNC('month', m.startdateforterm)::date OR m_month::date = DATE_TRUNC('month', m.startdateforterm - INTERVAL '1 month')::date) AND m.startdateforterm > m.originaljoindate THEN 'yes' ELSE 'no' END AS "Iscurrentrenew",
+    CASE 
+        WHEN m.startdateforterm IS NOT NULL 
+         AND m.originaljoindate IS NOT NULL
+         AND EXTRACT(YEAR FROM m.startdateforterm) != EXTRACT(YEAR FROM m.originaljoindate)
+         AND m.startdateforterm > (m.originaljoindate + INTERVAL '3 months')
+         AND m_month::date = DATE_TRUNC('month', m.startdateforterm)::date
+        THEN 'yes' 
+        ELSE 'no' 
+    END AS "Iscurrentrenew",
     CASE WHEN EXISTS (
         SELECT 1 FROM certification c 
         WHERE c.personid = p.personid AND (c.effectiveenddate >= m_month::date OR c.certificationstatusname = 'Certified')
@@ -169,7 +177,14 @@ SELECT
         THEN 'yes' 
         ELSE 'no' 
     END AS "Isnonrenew",
-    CASE WHEN m.startdateforterm > m.originaljoindate THEN 'yes' ELSE 'no' END AS "Isrenew",
+    CASE 
+        WHEN m.startdateforterm IS NOT NULL 
+         AND m.originaljoindate IS NOT NULL
+         AND EXTRACT(YEAR FROM m.startdateforterm) != EXTRACT(YEAR FROM m.originaljoindate)
+         AND m.startdateforterm > (m.originaljoindate + INTERVAL '3 months')
+        THEN 'yes' 
+        ELSE 'no' 
+    END AS "Isrenew",
     COALESCE(m.tenureinyears, 1) AS "Qtd_renew"
 FROM membership m
 JOIN person p ON p.personid = m.personid
