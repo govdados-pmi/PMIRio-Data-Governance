@@ -516,6 +516,44 @@ if "etl" in tab_dict:
                     has_error = True
 
                 if not has_error:
+                    # Registra no Data Lake para rastreabilidade e atualização do carimbo de data/hora
+                    if uploaded_members:
+                        for uf in uploaded_members:
+                            try:
+                                count_m = res_m.get("details", {}).get("memberships_inserted", 0) + res_m.get("details", {}).get("memberships_updated", 0)
+                                db_manager.save_datalake_file(
+                                    filename=uf.name,
+                                    file_bytes=uf.getvalue(),
+                                    record_count=count_m,
+                                    source="manual_upload",
+                                    data_type="filiados"
+                                )
+                            except Exception:
+                                pass
+                    if uploaded_certs:
+                        for uf in uploaded_certs:
+                            try:
+                                db_manager.save_datalake_file(
+                                    filename=uf.name,
+                                    file_bytes=uf.getvalue(),
+                                    record_count=res_c.get("certifications_inserted", 0),
+                                    source="manual_upload",
+                                    data_type="certificacoes"
+                                )
+                            except Exception:
+                                pass
+                    if uploaded_vol:
+                        try:
+                            db_manager.save_datalake_file(
+                                filename=uploaded_vol.name,
+                                file_bytes=uploaded_vol.getvalue(),
+                                record_count=res_v.get("volunteers_inserted", 0),
+                                source="manual_upload",
+                                data_type="voluntarios"
+                            )
+                        except Exception:
+                            pass
+
                     st.cache_data.clear()
                     st.success(f"🎉 Pipeline executado com sucesso em **{t_elapsed} segundos**!")
 

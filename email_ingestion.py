@@ -35,6 +35,8 @@ def decode_mime_words(s: Optional[str]) -> str:
             result.append(frag.decode(enc or "utf-8", errors="ignore"))
         else:
             result.append(str(frag))
+    return "".join(result)
+
 def detect_dataset_type(filename: str, file_path: str = None) -> str:
     """Detecta automaticamente se a planilha é de filiados, certificações ou voluntários."""
     fn_lower = filename.lower()
@@ -147,7 +149,7 @@ class EmailDataLakeIngestion:
                 attachments = []
                 for part in msg.walk():
                     content_disposition = str(part.get("Content-Disposition", ""))
-                    filename = part.get_filename()
+                    filename = part.get_filename() or part.get_param("name", header="content-type")
                     if filename:
                         filename = decode_mime_words(filename)
                     
