@@ -181,6 +181,13 @@ CROSS JOIN LATERAL generate_series(
         THEN DATE_TRUNC('month', m.originaljoindate)
         ELSE DATE_TRUNC('month', m.startdateforterm)
     END,
-    DATE_TRUNC('month', m.enddateforterm),
+    LEAST(DATE_TRUNC('month', m.enddateforterm), DATE_TRUNC('month', CURRENT_DATE)),
     INTERVAL '1 month'
-) AS m_month;
+) AS m_month
+WHERE CASE 
+        WHEN m.originaljoindate IS NOT NULL 
+         AND m.originaljoindate < m.startdateforterm 
+         AND m.originaljoindate >= (m.startdateforterm - INTERVAL '35 days') 
+        THEN DATE_TRUNC('month', m.originaljoindate)
+        ELSE DATE_TRUNC('month', m.startdateforterm)
+      END <= DATE_TRUNC('month', CURRENT_DATE);
