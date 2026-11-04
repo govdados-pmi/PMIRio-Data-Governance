@@ -109,3 +109,54 @@ CREATE TABLE datalake_raw_files (
     file_content BYTEA,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+-- 9. Views para Conexão Direta com Google Looker Studio (Data Studio)
+CREATE OR REPLACE VIEW vw_looker_certificacoes AS
+SELECT 
+    COALESCE(c.effectivestartdate, c.originalgrantdate) AS "Mes_Referencia",
+    c.personid AS "ID",
+    c.certificationtypename AS "Certificacao",
+    c.originalgrantdate AS "Data_Certificacao_Original",
+    c.effectivestartdate AS "Data_Certificacao_Atual",
+    c.effectiveenddate AS "Data_Expiracao_Certificacao",
+    c.certificationstatusname AS "Status_Certificacao",
+    c.total_cycleseqno AS "Qtde_Ciclos"
+FROM certification c;
+
+CREATE OR REPLACE VIEW vw_looker_filiacoes AS
+SELECT 
+    DATE_TRUNC('month', m.startdateforterm)::DATE AS "Memberdatayearmonth-dateformat",
+    p.personid AS "Personid",
+    p.fullname AS "Fullname",
+    p.industry AS "Industry",
+    p.primaryemail AS "Primaryemail",
+    m.originaljoindate AS "Originaljoindate",
+    m.startdateforterm AS "Startdateforterm",
+    m.enddateforterm AS "Enddateforterm",
+    m.plannameforchapters AS "Plannameforchapters",
+    m.issinglemembership AS "Issinglemembership",
+    m.autorenewstatus AS "Autorenewstatus",
+    (
+        SELECT STRING_AGG(DISTINCT c.certificationtypename, ', ')
+        FROM certification c 
+        WHERE c.personid = p.personid
+    ) AS "Certificationlist",
+    p.primaryphone AS "Primaryphone",
+    p.primaryaddress AS "Primaryaddress1",
+    p.primaryzip AS "Primaryzip",
+    CASE WHEN m.enddateforterm >= CURRENT_DATE THEN 'yes' ELSE 'no' END AS "Isactive",
+    m.isreceiveelectronicnotifications AS "Isreceiveelectronicnotifications",
+    CASE WHEN m.enddateforterm >= CURRENT_DATE AND m.enddateforterm <= (CURRENT_DATE + INTERVAL '30 days') THEN 'yes' ELSE 'no' END AS "IsCurrentExpiration",
+    CASE WHEN m.startdateforterm >= (CURRENT_DATE - INTERVAL '30 days') AND m.startdateforterm > m.originaljoindate THEN 'yes' ELSE 'no' END AS "Iscurrentrenew",
+    CASE WHEN EXISTS (
+        SELECT 1 FROM certification c 
+        WHERE c.personid = p.personid AND (c.effectiveenddate >= CURRENT_DATE OR c.certificationstatusname = 'Certified')
+    ) THEN 'yes' ELSE 'no' END AS "Iscurrentlycertified",
+    CASE WHEN m.originaljoindate >= (CURRENT_DATE - INTERVAL '30 days') THEN 'yes' ELSE 'no' END AS "Isfirstmonth",
+    CASE WHEN COALESCE(m.tenureinyears, 0) <= 1 OR m.originaljoindate >= (CURRENT_DATE - INTERVAL '1 year') THEN 'yes' ELSE 'no' END AS "Isfirstyear",
+    CASE WHEN m.plannameforchapters IS NOT NULL AND m.plannameforchapters != '' THEN 'yes' ELSE 'no' END AS "Ishaschapter",
+    CASE WHEN m.enddateforterm < CURRENT_DATE THEN 'yes' ELSE 'no' END AS "Isnonrenew",
+    CASE WHEN m.startdateforterm > m.originaljoindate THEN 'yes' ELSE 'no' END AS "Isrenew",
+    COALESCE(m.tenureinyears, 1) AS "Qtd_renew"
+FROM membership m
+JOIN person p ON p.personid = m.personid;
