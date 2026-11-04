@@ -158,8 +158,17 @@ SELECT
     ) THEN 'yes' ELSE 'no' END AS "Iscurrentlycertified",
     CASE WHEN m.originaljoindate IS NOT NULL AND m_month::date = DATE_TRUNC('month', m.originaljoindate)::date THEN 'yes' ELSE 'no' END AS "Isfirstmonth",
     CASE WHEN m.originaljoindate IS NOT NULL AND m_month::date < (m.originaljoindate + INTERVAL '1 year') THEN 'yes' ELSE 'no' END AS "Isfirstyear",
-    CASE WHEN m.plannameforchapters IS NOT NULL AND m.plannameforchapters != '' THEN 'yes' ELSE 'no' END AS "Ishaschapter",
-    'no'::text AS "Isnonrenew",
+    CASE 
+        WHEN m_month::date = DATE_TRUNC('month', m.enddateforterm)::date 
+         AND NOT EXISTS (
+             SELECT 1 FROM membership m2 
+             WHERE m2.personid = m.personid 
+               AND m2.startdateforterm > m.startdateforterm 
+               AND m2.startdateforterm <= (m.enddateforterm + INTERVAL '60 days')
+         )
+        THEN 'yes' 
+        ELSE 'no' 
+    END AS "Isnonrenew",
     CASE WHEN m.startdateforterm > m.originaljoindate THEN 'yes' ELSE 'no' END AS "Isrenew",
     COALESCE(m.tenureinyears, 1) AS "Qtd_renew"
 FROM membership m
