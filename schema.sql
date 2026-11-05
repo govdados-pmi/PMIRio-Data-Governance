@@ -9,6 +9,9 @@ CREATE TABLE person (
     jobtittle VARCHAR,  
     primaryzip VARCHAR,  
     primarycity VARCHAR,  
+    primarystate VARCHAR,
+    primarycountryname VARCHAR,
+    primaryaddress_full TEXT,
     alternativeemail VARCHAR 
 ); 
 
@@ -161,7 +164,11 @@ SELECT
     ) AS "Certificationlist",
     p.primaryphone AS "Primaryphone",
     p.primaryaddress AS "Primaryaddress1",
+    p.primarycity AS "Primarycity",
+    p.primarystate AS "Primarystate",
+    p.primarycountryname AS "Primarycountryname",
     p.primaryzip AS "Primaryzip",
+    p.primaryaddress_full AS "Endereco_Completo",
     'yes'::text AS "Isactive",
     m.isreceiveelectronicnotifications AS "Isreceiveelectronicnotifications",
     COALESCE(

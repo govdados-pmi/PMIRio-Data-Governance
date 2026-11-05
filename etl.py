@@ -135,6 +135,112 @@ def clean_float(val):
     except Exception:
         return None
 
+def clean_country(val):
+    if pd.isna(val) or val is None: 
+        return None
+    s = str(val).strip().upper()
+    if s in ['UNKNOWN', 'BAD RECORD', 'DELETED', '', 'NAN', 'NONE', 'NULL']: 
+        return None
+    if s in ['BRAZIL', 'BRASIL']: 
+        return 'Brasil'
+    if s in ['UNITED STATES', 'USA', 'US']: 
+        return 'Estados Unidos'
+    if s in ['PORTUGAL']: 
+        return 'Portugal'
+    if s in ['CANADA']: 
+        return 'Canadá'
+    if s in ['UNITED KINGDOM', 'UK', 'ENGLAND', 'GREAT BRITAIN']: 
+        return 'Reino Unido'
+    if s in ['SPAIN']: 
+        return 'Espanha'
+    if s in ['FRANCE']: 
+        return 'França'
+    if s in ['GERMANY']: 
+        return 'Alemanha'
+    if s in ['ITALY']: 
+        return 'Itália'
+    return s.title()
+
+def clean_uf(val, country):
+    if pd.isna(val) or val is None: 
+        return None
+    s = str(val).strip().upper()
+    if re.match(r'^\d+$', s): 
+        return None
+    if s in ['RIO DE JANEIRO', 'ESTADO DO RIO DE JANEIRO']: 
+        return 'RJ'
+    if s in ['SAO PAULO', 'SÃO PAULO', 'ESTADO DE SAO PAULO']: 
+        return 'SP'
+    if s in ['MINAS GERAIS']: 
+        return 'MG'
+    if len(s) == 2 and country == 'Brasil': 
+        return s
+    if len(s) == 2:
+        return s
+    return s.title()
+
+def clean_city(val):
+    if pd.isna(val) or val is None: 
+        return None
+    s = str(val).strip()
+    s = re.sub(r'[\s,\-]+(RJ|SP|MG|ES|PR|SC|RS|DF|BA|GO|PE|CE|PA|AM|MT|MS|MA|PB|RN|AL|SE|PI|RO|TO|AC|AP|RR)$', '', s, flags=re.IGNORECASE).strip()
+    s = re.sub(r'\s+', ' ', s)
+    s = s.title()
+    fixes = {
+        'Rio De Janeiro': 'Rio de Janeiro',
+        'Niteroi': 'Niterói',
+        'Macae': 'Macaé',
+        'Petropolis': 'Petrópolis',
+        'Sao Paulo': 'São Paulo',
+        'Rio Das Ostras': 'Rio das Ostras',
+        'Nova Iguacu': 'Nova Iguaçu',
+        'Teresopolis': 'Teresópolis',
+        'Brasilia': 'Brasília',
+        'Sao Goncalo': 'São Gonçalo',
+        'Marica': 'Maricá',
+        'Juiz De Fora': 'Juiz de Fora',
+        'Volta Redonda': 'Volta Redonda',
+        'Campos Dos Goytacazes': 'Campos dos Goytacazes',
+        'Cabo Frio': 'Cabo Frio',
+        'Angra Dos Reis': 'Angra dos Reis'
+    }
+    return fixes.get(s, s)
+
+def clean_cep(val):
+    if pd.isna(val) or val is None: 
+        return None
+    digits = re.sub(r'\D', '', str(val).strip())
+    if len(digits) == 8 and digits not in ['00000000', '99999999', '11111111']:
+        return f'{digits[:5]}-{digits[5:]}'
+    s = str(val).strip()
+    if s in ['9999999', '00000', '0', 'nan', 'None']: 
+        return None
+    return s
+
+def clean_address(val):
+    if pd.isna(val) or val is None: 
+        return None
+    s = str(val).strip()
+    s = re.sub(r'^[\s,.\-]+|[\s,.\-]+$', '', s)
+    s = re.sub(r'\s+', ' ', s)
+    return s if s else None
+
+def build_full_address(addr, city, uf, cep, country):
+    parts = []
+    if addr:
+        parts.append(addr)
+    if city and uf:
+        parts.append(f"{city} - {uf}")
+    elif city:
+        parts.append(city)
+    elif uf:
+        parts.append(uf)
+    if cep:
+        parts.append(cep)
+    if country:
+        parts.append(country)
+    return ", ".join(parts) if parts else None
+
 def get_param_placeholder():
     return "%s" if db_manager.is_postgres else "?"
 
@@ -205,6 +311,10 @@ class ETLPipeline:
                 cols_map[col] = "tenureinyears"
             elif any(k in c_clean for k in ["certificationlist", "certificacoes", "certifications", "certification"]):
                 cols_map[col] = "certificationlist"
+            elif "primarystate" in c_clean or "state" in c_clean or "estado" in c_clean or c_clean == "uf":
+                cols_map[col] = "primarystate"
+            elif "primarycountryname" in c_clean or "country" in c_clean or "pais" in c_clean:
+                cols_map[col] = "primarycountryname"
             elif "memberdatayearmonth" in c_clean or "mesreferencia" in c_clean:
                 cols_map[col] = "memberdatayearmonth"
             elif "iscurrentrenew" in c_clean:
@@ -275,24 +385,45 @@ class ETLPipeline:
                 if email:
                     email = email.lower()
                 
+                raw_addr = clean_str(row.get('primaryaddress'))
+                raw_city = clean_str(row.get('primarycity'))
+                raw_state = clean_str(row.get('primarystate'))
+                raw_country = clean_str(row.get('primarycountryname'))
+                raw_zip = clean_str(row.get('primaryzip'))
+
+                country = clean_country(raw_country)
+                if not country and raw_state in ['RJ', 'SP', 'MG', 'DF', 'ES', 'PR', 'SC', 'RS', 'BA']:
+                    country = 'Brasil'
+                elif not country:
+                    country = 'Brasil'
+
+                uf = clean_uf(raw_state, country)
+                city = clean_city(raw_city)
+                addr = clean_address(raw_addr)
+                cep = clean_cep(raw_zip)
+                full_addr = build_full_address(addr, city, uf, cep, country)
+
                 p_data = {
                     "pid": pid,
                     "fullname": clean_str(row.get('fullname')),
                     "email": email,
                     "phone": clean_str(row.get('primaryphone')),
-                    "address": clean_str(row.get('primaryaddress')),
+                    "address": addr,
                     "industry": clean_str(row.get('industry')),
                     "jobtittle": clean_str(row.get('jobtittle')),
-                    "primaryzip": clean_str(row.get('primaryzip')),
-                    "primarycity": clean_str(row.get('primarycity')),
+                    "primaryzip": cep,
+                    "primarycity": city,
+                    "primarystate": uf,
+                    "primarycountryname": country,
+                    "primaryaddress_full": full_addr,
                     "alternativeemail": clean_str(row.get('alternativeemail'))
                 }
                 unique_persons[pid] = p_data
 
             # Processa inserção/atualização de pessoas + histórico
             insert_person_sql = f"""
-            INSERT INTO person (personid, fullname, primaryemail, primaryphone, primaryaddress, industry, jobtittle, primaryzip, primarycity, alternativeemail)
-            VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder});
+            INSERT INTO person (personid, fullname, primaryemail, primaryphone, primaryaddress, industry, jobtittle, primaryzip, primarycity, primarystate, primarycountryname, primaryaddress_full, alternativeemail)
+            VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder});
             """
 
             update_person_sql = f"""
@@ -305,6 +436,9 @@ class ETLPipeline:
                 jobtittle = COALESCE({placeholder}, jobtittle),
                 primaryzip = COALESCE({placeholder}, primaryzip),
                 primarycity = COALESCE({placeholder}, primarycity),
+                primarystate = COALESCE({placeholder}, primarystate),
+                primarycountryname = COALESCE({placeholder}, primarycountryname),
+                primaryaddress_full = COALESCE({placeholder}, primaryaddress_full),
                 alternativeemail = COALESCE({placeholder}, alternativeemail)
             WHERE personid = {placeholder};
             """
@@ -322,7 +456,9 @@ class ETLPipeline:
                 if pid not in existing_persons:
                     p_tuple = (
                         pid, p["fullname"], p["email"], p["phone"], p["address"],
-                        p["industry"], p["jobtittle"], p["primaryzip"], p["primarycity"], p["alternativeemail"]
+                        p["industry"], p["jobtittle"], p["primaryzip"], p["primarycity"],
+                        p["primarystate"], p["primarycountryname"], p["primaryaddress_full"],
+                        p["alternativeemail"]
                     )
                     new_persons_batch.append(p_tuple)
                     existing_persons[pid] = {
@@ -354,7 +490,9 @@ class ETLPipeline:
                     if changed:
                         update_persons_batch.append((
                             p["fullname"], p["email"], p["phone"], p["address"],
-                            p["industry"], p["jobtittle"], p["primaryzip"], p["primarycity"], alt_email_to_save, pid
+                            p["industry"], p["jobtittle"], p["primaryzip"], p["primarycity"],
+                            p["primarystate"], p["primarycountryname"], p["primaryaddress_full"],
+                            alt_email_to_save, pid
                         ))
                         existing_persons[pid] = {
                             "email": p["email"] if p["email"] else old_p["email"],
@@ -364,8 +502,8 @@ class ETLPipeline:
 
             # Executa inserções e atualizações em lote de alta performance (fast_batch_insert)
             if new_persons_batch:
-                person_pg = "INSERT INTO person (personid, fullname, primaryemail, primaryphone, primaryaddress, industry, jobtittle, primaryzip, primarycity, alternativeemail) VALUES %s ON CONFLICT (personid) DO NOTHING;"
-                person_sqlite = "INSERT INTO person (personid, fullname, primaryemail, primaryphone, primaryaddress, industry, jobtittle, primaryzip, primarycity, alternativeemail) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (personid) DO NOTHING;"
+                person_pg = "INSERT INTO person (personid, fullname, primaryemail, primaryphone, primaryaddress, industry, jobtittle, primaryzip, primarycity, primarystate, primarycountryname, primaryaddress_full, alternativeemail) VALUES %s ON CONFLICT (personid) DO NOTHING;"
+                person_sqlite = "INSERT INTO person (personid, fullname, primaryemail, primaryphone, primaryaddress, industry, jobtittle, primaryzip, primarycity, primarystate, primarycountryname, primaryaddress_full, alternativeemail) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (personid) DO NOTHING;"
                 fast_batch_insert(cur, person_pg, person_sqlite, new_persons_batch, page_size=5000)
                 persons_inserted = len(new_persons_batch)
 
