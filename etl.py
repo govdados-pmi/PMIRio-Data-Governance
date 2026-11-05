@@ -205,6 +205,16 @@ class ETLPipeline:
                 cols_map[col] = "tenureinyears"
             elif any(k in c_clean for k in ["certificationlist", "certificacoes", "certifications", "certification"]):
                 cols_map[col] = "certificationlist"
+            elif "memberdatayearmonth" in c_clean or "mesreferencia" in c_clean:
+                cols_map[col] = "memberdatayearmonth"
+            elif "iscurrentrenew" in c_clean:
+                cols_map[col] = "iscurrentrenew"
+            elif "iscurrentexpiration" in c_clean:
+                cols_map[col] = "iscurrentexpiration"
+            elif "isnonrenew" in c_clean:
+                cols_map[col] = "isnonrenew"
+            elif c_clean == "isrenew" or "isrenew" in c_clean:
+                cols_map[col] = "isrenew"
 
 
         df_combined = df_combined.rename(columns=cols_map)
@@ -372,10 +382,17 @@ class ETLPipeline:
                 persons_updated = len(update_persons_batch)
 
             # 2. Processa tabela MEMBERSHIP em lote (Incremental por personid + startdateforterm)
-            cur.execute("SELECT personid, startdateforterm FROM membership WHERE startdateforterm IS NOT NULL;")
-            existing_memberships = set((row[0], str(row[1])) for row in cur.fetchall())
+            cur.execute("SELECT membership_id, personid, startdateforterm, plannameforchapters FROM membership WHERE startdateforterm IS NOT NULL;")
+            existing_memberships = {}
+            for row in cur.fetchall():
+                m_id, pid, sdt, plan = row[0], row[1], str(row[2]), row[3]
+                existing_memberships[(pid, sdt)] = {"membership_id": m_id, "plannameforchapters": plan}
 
             new_memberships_batch = []
+            update_plans_batch = []
+
+            # Prioriza linhas com plano preenchido
+            records.sort(key=lambda r: 0 if (clean_str(r.get('plannameforchapters')) or '') != '' else 1)
 
             for row in records:
                 pid = clean_int(row.get('personid'))
@@ -385,10 +402,16 @@ class ETLPipeline:
                 orig_dt_str = clean_date(row.get('originaljoindate'))
                 start_dt_str = clean_date(row.get('startdateforterm'))
                 end_dt_str = clean_date(row.get('enddateforterm'))
+                plan_name = clean_str(row.get('plannameforchapters'))
                 
                 m_key = (pid, str(start_dt_str)) if start_dt_str else None
 
                 if m_key and m_key in existing_memberships:
+                    existing_entry = existing_memberships[m_key]
+                    # Se o registro existente no banco estava sem plano e a nova linha traz o plano, enfileira UPDATE
+                    if plan_name and (not existing_entry.get('plannameforchapters') or str(existing_entry.get('plannameforchapters')).strip() == ''):
+                        update_plans_batch.append((plan_name, existing_entry['membership_id']))
+                        existing_entry['plannameforchapters'] = plan_name
                     memberships_skipped += 1
                     continue
 
@@ -417,7 +440,7 @@ class ETLPipeline:
                     orig_dt_str,
                     start_dt_str,
                     end_dt_str,
-                    clean_str(row.get('plannameforchapters')),
+                    plan_name,
                     clean_str(row.get('autorenewstatus')),
                     clean_bool(row.get('issinglemembership')),
                     clean_bool(row.get('isreceiveelectronicnotifications')),
@@ -426,7 +449,10 @@ class ETLPipeline:
                 new_memberships_batch.append(m_tuple)
 
                 if m_key:
-                    existing_memberships.add(m_key)
+                    existing_memberships[m_key] = {"membership_id": None, "plannameforchapters": plan_name}
+
+            if update_plans_batch:
+                cur.executemany("UPDATE membership SET plannameforchapters = %s WHERE membership_id = %s;", update_plans_batch)
 
             if new_memberships_batch:
                 memb_pg = "INSERT INTO membership (personid, originaljoindate, startdateforterm, enddateforterm, plannameforchapters, autorenewstatus, issinglemembership, isreceiveelectronicnotifications, tenureinyears) VALUES %s;"
@@ -434,6 +460,54 @@ class ETLPipeline:
                 fast_batch_insert(cur, memb_pg, memb_sqlite, new_memberships_batch, page_size=5000)
                 memberships_inserted = len(new_memberships_batch)
 
+            # 3. Processa status mensal oficial do ThoughtSpot (member_monthly_status)
+            monthly_status_batch = []
+            seen_monthly = set()
+            for row in records:
+                pid = clean_int(row.get('personid'))
+                m_month = clean_date(row.get('memberdatayearmonth'))
+                if not pid or not m_month:
+                    continue
+                
+                key_monthly = (pid, m_month)
+                if key_monthly in seen_monthly:
+                    continue
+                seen_monthly.add(key_monthly)
+
+                renew = clean_bool(row.get('iscurrentrenew'))
+                expir = clean_bool(row.get('iscurrentexpiration'))
+                is_renew = clean_bool(row.get('isrenew'))
+                is_nonrenew = clean_bool(row.get('isnonrenew'))
+
+                if any(v is not None for v in [renew, expir, is_renew, is_nonrenew]):
+                    monthly_status_batch.append((
+                        pid, m_month, renew, expir, is_renew, is_nonrenew
+                    ))
+
+            monthly_status_upserted = 0
+            if monthly_status_batch:
+                ms_pg = """
+                INSERT INTO member_monthly_status (
+                    personid, memberdatayearmonth, iscurrentrenew, iscurrentexpiration, isrenew, isnonrenew
+                ) VALUES %s
+                ON CONFLICT (personid, memberdatayearmonth) DO UPDATE SET
+                    iscurrentrenew = COALESCE(EXCLUDED.iscurrentrenew, member_monthly_status.iscurrentrenew),
+                    iscurrentexpiration = COALESCE(EXCLUDED.iscurrentexpiration, member_monthly_status.iscurrentexpiration),
+                    isrenew = COALESCE(EXCLUDED.isrenew, member_monthly_status.isrenew),
+                    isnonrenew = COALESCE(EXCLUDED.isnonrenew, member_monthly_status.isnonrenew);
+                """
+                ms_sqlite = """
+                INSERT INTO member_monthly_status (
+                    personid, memberdatayearmonth, iscurrentrenew, iscurrentexpiration, isrenew, isnonrenew
+                ) VALUES (%s, %s, %s, %s, %s, %s)
+                ON CONFLICT (personid, memberdatayearmonth) DO UPDATE SET
+                    iscurrentrenew = COALESCE(excluded.iscurrentrenew, member_monthly_status.iscurrentrenew),
+                    iscurrentexpiration = COALESCE(excluded.iscurrentexpiration, member_monthly_status.iscurrentexpiration),
+                    isrenew = COALESCE(excluded.isrenew, member_monthly_status.isrenew),
+                    isnonrenew = COALESCE(excluded.isnonrenew, member_monthly_status.isnonrenew);
+                """
+                fast_batch_insert(cur, ms_pg, ms_sqlite, monthly_status_batch, page_size=5000)
+                monthly_status_upserted = len(monthly_status_batch)
 
             conn.commit()
 
@@ -443,7 +517,9 @@ class ETLPipeline:
                 "persons_updated": persons_updated,
                 "history_records_created": history_records_created,
                 "memberships_inserted": memberships_inserted,
-                "memberships_skipped": memberships_skipped
+                "memberships_skipped": memberships_skipped,
+                "memberships_plans_updated": len(update_plans_batch),
+                "monthly_status_upserted": monthly_status_upserted
             }
 
 

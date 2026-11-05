@@ -36,3 +36,4 @@ datalake/
 .vscode/
 *.swp
 *.swo
+scratch/

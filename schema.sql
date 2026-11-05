@@ -36,6 +36,20 @@ CREATE TABLE person_history (
     changed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 ); 
 
+-- 2.2. Tabela de Status Mensal de Filiados (Snapshots oficiais do ThoughtSpot)
+CREATE TABLE member_monthly_status (
+    personid BIGINT NOT NULL REFERENCES person (personid),
+    memberdatayearmonth DATE NOT NULL,
+    iscurrentrenew BOOLEAN,
+    iscurrentexpiration BOOLEAN,
+    isrenew BOOLEAN,
+    isnonrenew BOOLEAN,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (personid, memberdatayearmonth)
+);
+CREATE INDEX IF NOT EXISTS idx_member_monthly_status_lookup 
+    ON member_monthly_status (personid, memberdatayearmonth); 
+
 -- 3. Criação da Tabela CERTIFICATION
 CREATE TABLE certification ( 
     certification_id SERIAL PRIMARY KEY, -- Chave primária auto-incremental
@@ -150,41 +164,69 @@ SELECT
     p.primaryzip AS "Primaryzip",
     'yes'::text AS "Isactive",
     m.isreceiveelectronicnotifications AS "Isreceiveelectronicnotifications",
-    CASE WHEN m_month::date = DATE_TRUNC('month', m.enddateforterm)::date THEN 'yes' ELSE 'no' END AS "IsCurrentExpiration",
-    CASE 
-        WHEN m.startdateforterm IS NOT NULL 
-         AND m.originaljoindate IS NOT NULL
-         AND EXTRACT(YEAR FROM m.startdateforterm) != EXTRACT(YEAR FROM m.originaljoindate)
-         AND m.startdateforterm > (m.originaljoindate + INTERVAL '3 months')
-         AND m_month::date = DATE_TRUNC('month', m.startdateforterm)::date
-        THEN 'yes' 
-        ELSE 'no' 
-    END AS "Iscurrentrenew",
+    COALESCE(
+        CASE 
+            WHEN ms.iscurrentexpiration IS TRUE THEN 'yes'
+            WHEN ms.iscurrentexpiration IS FALSE THEN 'no'
+            ELSE NULL
+        END,
+        CASE WHEN m_month::date = DATE_TRUNC('month', m.enddateforterm)::date THEN 'yes' ELSE 'no' END
+    ) AS "IsCurrentExpiration",
+    COALESCE(
+        CASE 
+            WHEN ms.iscurrentrenew IS TRUE THEN 'yes'
+            WHEN ms.iscurrentrenew IS FALSE THEN 'no'
+            ELSE NULL
+        END,
+        CASE 
+            WHEN m.startdateforterm IS NOT NULL 
+             AND m.originaljoindate IS NOT NULL
+             AND EXTRACT(YEAR FROM m.startdateforterm) != EXTRACT(YEAR FROM m.originaljoindate)
+             AND m.startdateforterm > (m.originaljoindate + INTERVAL '3 months')
+             AND m_month::date = DATE_TRUNC('month', m.startdateforterm)::date
+            THEN 'yes' 
+            ELSE 'no' 
+        END
+    ) AS "Iscurrentrenew",
     CASE WHEN EXISTS (
         SELECT 1 FROM certification c 
         WHERE c.personid = p.personid AND (c.effectiveenddate >= m_month::date OR c.certificationstatusname = 'Certified')
-    ) THEN 'yes' ELSE 'no' END AS "Iscurrentlycertified",
+    ) THEN 'Certificado' ELSE 'Não Certificado' END AS "Iscurrentlycertified",
     CASE WHEN m.originaljoindate IS NOT NULL AND m_month::date = DATE_TRUNC('month', m.originaljoindate)::date THEN 'yes' ELSE 'no' END AS "Isfirstmonth",
     CASE WHEN m.originaljoindate IS NOT NULL AND m_month::date < (m.originaljoindate + INTERVAL '1 year') THEN 'yes' ELSE 'no' END AS "Isfirstyear",
-    CASE 
-        WHEN m_month::date = DATE_TRUNC('month', m.enddateforterm)::date 
-         AND NOT EXISTS (
-             SELECT 1 FROM membership m2 
-             WHERE m2.personid = m.personid 
-               AND m2.startdateforterm > m.startdateforterm 
-               AND m2.startdateforterm <= (m.enddateforterm + INTERVAL '60 days')
-         )
-        THEN 'yes' 
-        ELSE 'no' 
-    END AS "Isnonrenew",
-    CASE 
-        WHEN m.startdateforterm IS NOT NULL 
-         AND m.originaljoindate IS NOT NULL
-         AND EXTRACT(YEAR FROM m.startdateforterm) != EXTRACT(YEAR FROM m.originaljoindate)
-         AND m.startdateforterm > (m.originaljoindate + INTERVAL '3 months')
-        THEN 'yes' 
-        ELSE 'no' 
-    END AS "Isrenew",
+    COALESCE(
+        CASE 
+            WHEN ms.isnonrenew IS TRUE THEN 'yes'
+            WHEN ms.isnonrenew IS FALSE THEN 'no'
+            ELSE NULL
+        END,
+        CASE 
+            WHEN m_month::date = DATE_TRUNC('month', m.enddateforterm)::date 
+             AND NOT EXISTS (
+                 SELECT 1 FROM membership m2 
+                 WHERE m2.personid = m.personid 
+                    AND m2.startdateforterm > m.startdateforterm 
+                    AND m2.startdateforterm <= (m.enddateforterm + INTERVAL '60 days')
+             )
+            THEN 'yes' 
+            ELSE 'no' 
+        END
+    ) AS "Isnonrenew",
+    COALESCE(
+        CASE 
+            WHEN ms.isrenew IS TRUE THEN 'yes'
+            WHEN ms.isrenew IS FALSE THEN 'no'
+            ELSE NULL
+        END,
+        CASE 
+            WHEN m.startdateforterm IS NOT NULL 
+             AND m.originaljoindate IS NOT NULL
+             AND EXTRACT(YEAR FROM m.startdateforterm) != EXTRACT(YEAR FROM m.originaljoindate)
+             AND m.startdateforterm > (m.originaljoindate + INTERVAL '3 months')
+            THEN 'yes' 
+            ELSE 'no' 
+        END
+    ) AS "Isrenew",
     COALESCE(m.tenureinyears, 1) AS "Qtd_renew"
 FROM membership m
 JOIN person p ON p.personid = m.personid
@@ -199,6 +241,9 @@ CROSS JOIN LATERAL generate_series(
     LEAST(DATE_TRUNC('month', m.enddateforterm), DATE_TRUNC('month', CURRENT_DATE)),
     INTERVAL '1 month'
 ) AS m_month
+LEFT JOIN member_monthly_status ms 
+    ON ms.personid = p.personid 
+   AND ms.memberdatayearmonth = m_month::date
 WHERE CASE 
         WHEN m.originaljoindate IS NOT NULL 
          AND m.originaljoindate < m.startdateforterm 
