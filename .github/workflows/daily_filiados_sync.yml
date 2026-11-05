@@ -3,7 +3,7 @@ name: Daily Filiados Ingestion & Data Lake Sync
 on:
   schedule:
     # Executa diariamente às 10:15 BRT (13:15 UTC), 15 min após o disparo do ThoughtSpot (10:00 BRT)
-    - cron: '15 13 * * *'
+    - cron: '08 13 * * *'
   workflow_dispatch:
     inputs:
       force:
