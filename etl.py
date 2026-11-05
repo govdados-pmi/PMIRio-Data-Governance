@@ -949,10 +949,49 @@ class ETLPipeline:
                 fast_batch_insert(cur, person_sql_pg, person_sql_sqlite, person_tuples, page_size=5000)
                 persons_inserted = len(person_tuples)
 
+            # 2. Carregar informações de Termo de Voluntariado (Auditoria do RH) se disponível
+            termo_map = {}
+            possible_rh_files = [
+                os.path.join(os.path.dirname(vol_file), 'planilha atualizada pmi.xlsx'),
+                'planilhas/planilha atualizada pmi.xlsx'
+            ]
+            for rh_f in possible_rh_files:
+                if os.path.exists(rh_f):
+                    try:
+                        import openpyxl
+                        wb_rh = openpyxl.load_workbook(rh_f, data_only=True)
+                        if 'Nas duas bases' in wb_rh.sheetnames:
+                            df_a = pd.DataFrame(wb_rh['Nas duas bases'].values)
+                            df_a.columns = df_a.iloc[0]
+                            df_a = df_a.iloc[1:]
+                            for _, r_a in df_a.iterrows():
+                                try:
+                                    p_id = int(float(r_a['ID PMI / Person Id']))
+                                    st_val = str(r_a['Status do termo']).strip()
+                                    termo_map[p_id] = (st_val, st_val == 'Assinado')
+                                except:
+                                    pass
+                        if 'Somente na base' in wb_rh.sheetnames:
+                            df_b = pd.DataFrame(wb_rh['Somente na base'].values)
+                            df_b.columns = df_b.iloc[0]
+                            df_b = df_b.iloc[1:]
+                            for _, r_b in df_b.iterrows():
+                                possivel = str(r_b.get('Possível cadastro nos ativos') or '')
+                                if '—' in possivel:
+                                    try:
+                                        p_id = int(possivel.split('—')[0].strip())
+                                        st_val = str(r_b['Status do termo']).strip()
+                                        termo_map[p_id] = (st_val, st_val == 'Assinado')
+                                    except:
+                                        pass
+                        break
+                    except Exception as e_rh:
+                        print(f"Aviso ao carregar termo do RH: {e_rh}")
+
             cur.execute("DELETE FROM voluntary;")
 
-            vol_pg = "INSERT INTO voluntary (personid, applicants, opportunity_name, application_status, opportunity_description, email_address, application_service_start_date, application_service_end_date) VALUES %s;"
-            vol_sqlite = "INSERT INTO voluntary (personid, applicants, opportunity_name, application_status, opportunity_description, email_address, application_service_start_date, application_service_end_date) VALUES (%s, %s, %s, %s, %s, %s, %s, %s);"
+            vol_pg = "INSERT INTO voluntary (personid, applicants, opportunity_name, application_status, opportunity_description, email_address, application_service_start_date, application_service_end_date, termo_assinado, termo_status) VALUES %s;"
+            vol_sqlite = "INSERT INTO voluntary (personid, applicants, opportunity_name, application_status, opportunity_description, email_address, application_service_start_date, application_service_end_date, termo_assinado, termo_status) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s);"
 
             vol_tuples = []
             for idx, row in df.iterrows():
@@ -961,6 +1000,7 @@ class ETLPipeline:
                     continue
                 start_dt = clean_date(row.get('application_service_start_date'))
                 end_dt = clean_date(row.get('application_service_end_date'))
+                t_status, t_signed = termo_map.get(pid, ('Não Consta', False))
                 
                 v_tuple = (
                     pid,
@@ -970,7 +1010,9 @@ class ETLPipeline:
                     clean_str(row.get('opportunity_description')),
                     clean_str(row.get('email_address')),
                     start_dt,
-                    end_dt
+                    end_dt,
+                    t_signed,
+                    t_status
                 )
                 vol_tuples.append(v_tuple)
 

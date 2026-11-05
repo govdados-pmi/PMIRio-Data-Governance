@@ -16,11 +16,15 @@ class ReportManager:
         if df.empty:
             return df
         renames = {
-            'isreceiveelectronicnotifications': 'Aceita Notificações Eletrônicas'
+            'isreceiveelectronicnotifications': 'Aceita Notificações Eletrônicas',
+            'termo_assinado': 'Termo Assinado',
+            'termo_status': 'Status do Termo'
         }
         df = df.rename(columns=renames)
         if 'Aceita Notificações Eletrônicas' in df.columns:
             df['Aceita Notificações Eletrônicas'] = df['Aceita Notificações Eletrônicas'].map({True: 'Sim', False: 'Não', 1: 'Sim', 0: 'Não', '1': 'Sim', '0': 'Não'}).fillna('Não')
+        if 'Termo Assinado' in df.columns:
+            df['Termo Assinado'] = df['Termo Assinado'].map({True: 'Sim', False: 'Não', 1: 'Sim', 0: 'Não', '1': 'Sim', '0': 'Não'}).fillna('Não')
         return df
 
     def get_ref_date(self, ref_date: str = None) -> datetime:
@@ -552,7 +556,9 @@ class ReportManager:
             v.opportunity_description,
             v.application_status,
             v.application_service_start_date,
-            v.application_service_end_date
+            v.application_service_end_date,
+            v.termo_assinado,
+            v.termo_status
         FROM voluntary v
         LEFT JOIN (
             SELECT personid, isreceiveelectronicnotifications 

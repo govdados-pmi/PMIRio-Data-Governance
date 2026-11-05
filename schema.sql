@@ -76,7 +76,9 @@ CREATE TABLE voluntary (
     opportunity_description VARCHAR,  
     email_address VARCHAR,  
     application_service_start_date DATE,  
-    application_service_end_date DATE
+    application_service_end_date DATE,
+    termo_assinado BOOLEAN DEFAULT FALSE,
+    termo_status VARCHAR DEFAULT 'Não Consta'
 );
 
 -- 5. Criação da Tabela APP_USER (Autenticação e Governança RBAC)

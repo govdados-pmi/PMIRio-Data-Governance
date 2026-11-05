@@ -819,7 +819,9 @@ ORDER BY c.effectiveenddate ASC;""",
     v.opportunity_description,
     v.application_status,
     v.application_service_start_date,
-    v.application_service_end_date
+    v.application_service_end_date,
+    v.termo_assinado,
+    v.termo_status
 FROM voluntary v
 LEFT JOIN (
     SELECT personid, isreceiveelectronicnotifications 
