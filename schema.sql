@@ -12,6 +12,8 @@ CREATE TABLE person (
     primarystate VARCHAR,
     primarycountryname VARCHAR,
     primaryaddress_full TEXT,
+    primaryaddress_map TEXT,
+    primaryaddress_full_map TEXT,
     alternativeemail VARCHAR 
 ); 
 
@@ -168,12 +170,15 @@ SELECT
           AND (c.effectiveenddate >= ms.memberdatayearmonth OR c.certificationstatusname = 'Certified')
     ) AS "Certificationlist",
     p.primaryphone AS "Primaryphone",
-    p.primaryaddress AS "Primaryaddress1",
+    p.primaryaddress AS "Primaryaddress_Detalhado",
+    COALESCE(p.primaryaddress_map, p.primaryaddress) AS "Primaryaddress1",
     p.primarycity AS "Primarycity",
     p.primarystate AS "Primarystate",
     p.primarycountryname AS "Primarycountryname",
     p.primaryzip AS "Primaryzip",
-    p.primaryaddress_full AS "Endereco_Completo",
+    COALESCE(p.primaryaddress_full_map, p.primaryaddress_full) AS "Endereco_Mapa",
+    COALESCE(p.primaryaddress_full_map, p.primaryaddress_full) AS "Endereco_Completo",
+    p.primaryaddress_full AS "Endereco_Detalhado",
     'yes'::text AS "Isactive",
     m.isreceiveelectronicnotifications AS "Isreceiveelectronicnotifications",
     CASE WHEN ms.iscurrentexpiration IS TRUE THEN 'yes' ELSE 'no' END AS "IsCurrentExpiration",

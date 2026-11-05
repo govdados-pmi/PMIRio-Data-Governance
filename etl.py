@@ -241,6 +241,88 @@ def build_full_address(addr, city, uf, cep, country):
         parts.append(country)
     return ", ".join(parts) if parts else None
 
+def approximate_number(n: int) -> int:
+    """
+    Aproxima o número da residência/edifício para privacidade em mapas:
+    - n >= 100: arredonda para a centena (ex: 950 -> 900, 554 -> 500)
+    - 10 <= n < 100: arredonda para a dezena (ex: 95 -> 90, 55 -> 50)
+    - n < 10: 1
+    """
+    if n >= 100:
+        return (n // 100) * 100
+    elif n >= 10:
+        return (n // 10) * 10
+    else:
+        return 1
+
+def clean_address_for_map(addr: str) -> str:
+    """
+    Higieniza o endereço para gráficos de mapa:
+    - Remove complementos hiperdetalhados (apto, bloco, sala, casa, andar, etc.)
+    - Arredonda/aproxima o número do logradouro
+    - Mantém apenas o nome do logradouro e o número aproximado
+    """
+    if not addr or not str(addr).strip() or str(addr).strip().lower() in ['nan', 'none']:
+        return None
+    s = str(addr).strip()
+    s = re.sub(r'\s+', ' ', s)
+    
+    # Formato Internacional/EUA (número no início: '7807 Adagio Ave')
+    m_us = re.match(r'^(\d+)\s+([A-Za-zÀ-ÿ\s\.\,\-]+)$', s)
+    if m_us:
+        num = int(m_us.group(1))
+        street = m_us.group(2).strip(', -')
+        return f'{approximate_number(num)} {street}'
+
+    # Complemento com barra: 554/302 -> 554
+    s = re.sub(r'(\d+)\s*/\s*\d+.*$', r'\1', s, flags=re.IGNORECASE)
+
+    # Padroniza prefixos de número: 'numero 410', 'nº 410', 'n 41'
+    s = re.sub(r'\b(n[úu]mero|n[ºo]|no\.|n)\s+(\d+)', r'\2', s, flags=re.IGNORECASE)
+
+    # Remove termos de complemento e tudo o que vier depois
+    patterns_cut = [
+        r'[\s,\-]+(apto|apt|ap|apartamento|apart|ap\.)\b.*$',
+        r'[\s,\-]+(bloco|bl|bl\.)\b.*$',
+        r'[\s,\-]+(casa|cs|cs\.)\b.*$',
+        r'[\s,\-]+(sala|sl|sl\.)\b.*$',
+        r'[\s,\-]+(andar|º\s*andar)\b.*$',
+        r'[\s,\-]+(cobertura|cob|cob\.)\b.*$',
+        r'[\s,\-]+(fundos|fdes)\b.*$',
+        r'[\s,\-]+(lote|lt|quadra|qd)\b.*$',
+        r'[\s,\-]+(subsolo)\b.*$'
+    ]
+    for pat in patterns_cut:
+        s = re.sub(pat, '', s, flags=re.IGNORECASE).strip()
+
+    # Formato padrão brasileiro: Logradouro + Número
+    m_br = re.search(r'^(.*?)[,\s]+(\d+)\s*(.*?)$', s)
+    if m_br:
+        street = m_br.group(1).strip(' ,.-')
+        num_str = m_br.group(2)
+        if len(street) >= 3:
+            num = int(num_str)
+            return f'{street}, {approximate_number(num)}'
+
+    return s.strip(' ,.-')
+
+def build_map_address(addr_map, city, uf, country):
+    """
+    Concatena endereço aproximado para mapas com cidade, estado e país (sem expor CEP).
+    """
+    parts = []
+    if addr_map:
+        parts.append(addr_map)
+    if city and uf:
+        parts.append(f"{city} - {uf}")
+    elif city:
+        parts.append(city)
+    elif uf:
+        parts.append(uf)
+    if country:
+        parts.append(country)
+    return ", ".join(parts) if parts else None
+
 def get_param_placeholder():
     return "%s" if db_manager.is_postgres else "?"
 
@@ -402,6 +484,8 @@ class ETLPipeline:
                 addr = clean_address(raw_addr)
                 cep = clean_cep(raw_zip)
                 full_addr = build_full_address(addr, city, uf, cep, country)
+                addr_map = clean_address_for_map(addr)
+                full_addr_map = build_map_address(addr_map, city, uf, country)
 
                 p_data = {
                     "pid": pid,
@@ -416,14 +500,16 @@ class ETLPipeline:
                     "primarystate": uf,
                     "primarycountryname": country,
                     "primaryaddress_full": full_addr,
+                    "primaryaddress_map": addr_map,
+                    "primaryaddress_full_map": full_addr_map,
                     "alternativeemail": clean_str(row.get('alternativeemail'))
                 }
                 unique_persons[pid] = p_data
 
             # Processa inserção/atualização de pessoas + histórico
             insert_person_sql = f"""
-            INSERT INTO person (personid, fullname, primaryemail, primaryphone, primaryaddress, industry, jobtittle, primaryzip, primarycity, primarystate, primarycountryname, primaryaddress_full, alternativeemail)
-            VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder});
+            INSERT INTO person (personid, fullname, primaryemail, primaryphone, primaryaddress, industry, jobtittle, primaryzip, primarycity, primarystate, primarycountryname, primaryaddress_full, primaryaddress_map, primaryaddress_full_map, alternativeemail)
+            VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder});
             """
 
             update_person_sql = f"""
@@ -439,6 +525,8 @@ class ETLPipeline:
                 primarystate = COALESCE({placeholder}, primarystate),
                 primarycountryname = COALESCE({placeholder}, primarycountryname),
                 primaryaddress_full = COALESCE({placeholder}, primaryaddress_full),
+                primaryaddress_map = COALESCE({placeholder}, primaryaddress_map),
+                primaryaddress_full_map = COALESCE({placeholder}, primaryaddress_full_map),
                 alternativeemail = COALESCE({placeholder}, alternativeemail)
             WHERE personid = {placeholder};
             """
@@ -458,6 +546,7 @@ class ETLPipeline:
                         pid, p["fullname"], p["email"], p["phone"], p["address"],
                         p["industry"], p["jobtittle"], p["primaryzip"], p["primarycity"],
                         p["primarystate"], p["primarycountryname"], p["primaryaddress_full"],
+                        p["primaryaddress_map"], p["primaryaddress_full_map"],
                         p["alternativeemail"]
                     )
                     new_persons_batch.append(p_tuple)
@@ -492,6 +581,7 @@ class ETLPipeline:
                             p["fullname"], p["email"], p["phone"], p["address"],
                             p["industry"], p["jobtittle"], p["primaryzip"], p["primarycity"],
                             p["primarystate"], p["primarycountryname"], p["primaryaddress_full"],
+                            p["primaryaddress_map"], p["primaryaddress_full_map"],
                             alt_email_to_save, pid
                         ))
                         existing_persons[pid] = {
@@ -502,8 +592,8 @@ class ETLPipeline:
 
             # Executa inserções e atualizações em lote de alta performance (fast_batch_insert)
             if new_persons_batch:
-                person_pg = "INSERT INTO person (personid, fullname, primaryemail, primaryphone, primaryaddress, industry, jobtittle, primaryzip, primarycity, primarystate, primarycountryname, primaryaddress_full, alternativeemail) VALUES %s ON CONFLICT (personid) DO NOTHING;"
-                person_sqlite = "INSERT INTO person (personid, fullname, primaryemail, primaryphone, primaryaddress, industry, jobtittle, primaryzip, primarycity, primarystate, primarycountryname, primaryaddress_full, alternativeemail) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (personid) DO NOTHING;"
+                person_pg = "INSERT INTO person (personid, fullname, primaryemail, primaryphone, primaryaddress, industry, jobtittle, primaryzip, primarycity, primarystate, primarycountryname, primaryaddress_full, primaryaddress_map, primaryaddress_full_map, alternativeemail) VALUES %s ON CONFLICT (personid) DO NOTHING;"
+                person_sqlite = "INSERT INTO person (personid, fullname, primaryemail, primaryphone, primaryaddress, industry, jobtittle, primaryzip, primarycity, primarystate, primarycountryname, primaryaddress_full, primaryaddress_map, primaryaddress_full_map, alternativeemail) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (personid) DO NOTHING;"
                 fast_batch_insert(cur, person_pg, person_sqlite, new_persons_batch, page_size=5000)
                 persons_inserted = len(new_persons_batch)
 
