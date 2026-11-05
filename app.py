@@ -821,7 +821,15 @@ ORDER BY c.effectiveenddate ASC;""",
     v.application_service_start_date,
     v.application_service_end_date
 FROM voluntary v
-LEFT JOIN membership m ON v.personid = m.personid
+LEFT JOIN (
+    SELECT personid, isreceiveelectronicnotifications 
+    FROM (
+        SELECT personid, isreceiveelectronicnotifications, 
+               ROW_NUMBER() OVER (PARTITION BY personid ORDER BY enddateforterm DESC) as rn 
+        FROM membership
+    ) ranked_m 
+    WHERE rn = 1
+) m ON v.personid = m.personid
 ORDER BY v.application_service_start_date DESC;""",
     "Reconhecimento — Aniversariantes Renovados": """SELECT 
     p.personid,

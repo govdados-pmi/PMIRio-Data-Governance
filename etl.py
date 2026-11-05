@@ -887,25 +887,26 @@ class ETLPipeline:
 
         df = df.rename(columns=cols_map)
 
-        # Regra do Notebook (Célula 103):
-        # 1) Converter data para datetime
+        # 1) Filtrar status: manter apenas candidaturas ativas (excluir status 'Complete' / histórico encerrado)
+        if 'application_status' in df.columns:
+            df = df[df['application_status'].astype(str).str.strip().str.lower() != 'complete']
+
+        # 2) Converter datas para datetime e ordenar da mais nova para a mais antiga
         if 'application_service_start_date' in df.columns:
             df['application_service_start_date'] = pd.to_datetime(df['application_service_start_date'], errors='coerce')
-            # 2) Ordenar do mais novo para o mais antigo
             df = df.sort_values(by='application_service_start_date', ascending=False).reset_index(drop=True)
 
-        # 3) Email minúsculo
+        if 'application_service_end_date' in df.columns:
+            df['application_service_end_date'] = pd.to_datetime(df['application_service_end_date'], errors='coerce')
+
+        # 3) Email minúsculo e limpo
         if 'email_address' in df.columns:
             df['email_address'] = df['email_address'].astype(str).str.lower().str.strip()
-            # 4) Filtrar emails únicos (sem repetição)
-            email_counts = df['email_address'].value_counts()
-            df['email_count'] = df['email_address'].map(email_counts)
-            df = df[df['email_count'] == 1]
-            df = df.drop(columns=['email_count'])
         
-        # 5) Excluir status 'Complete'
-        if 'application_status' in df.columns:
-            df = df[df['application_status'] != 'Complete']
+        # 4) Deduplicar eventuais registros idênticos da mesma pessoa na mesma oportunidade
+        subset_cols = [c for c in ['personid', 'opportunity_name'] if c in df.columns]
+        if subset_cols:
+            df = df.drop_duplicates(subset=subset_cols, keep='first')
 
         vols_inserted = 0
         persons_inserted = 0
