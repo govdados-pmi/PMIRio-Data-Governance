@@ -194,6 +194,7 @@ with col_hdr2:
 STANDARD_REPORTS_DICT = {
     "Filiados_Ativos": "Filiados Ativos",
     "Novos_Filiados_30D": "Novos Filiados (30D)",
+    "Renovados_90D": "Filiados Renovados (90D)",
     "Desfiliados_30D": "Desfiliados (30D)",
     "Desfilia_Prox_30D": "A Vencer (30D)",
     "Desfilia_Prox_90D": "A Vencer (90D)",
@@ -202,6 +203,7 @@ STANDARD_REPORTS_DICT = {
     "Aniversariantes_Filiacao": "Aniversariantes",
     "Reconhecimento_Aniversariantes_Renovados": "Reconhecimento (Aniversariantes Renovados)",
     "Certificados_3_Meses": "Certificados (3M)",
+    "Certificacoes_Expirando_Mes": "Certificações Expirando no Mês",
     "Voluntarios_Ativos": "Voluntários Ativos"
 }
 
