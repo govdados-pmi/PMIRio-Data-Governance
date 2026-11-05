@@ -811,7 +811,7 @@ LEFT JOIN membership m ON p.personid = m.personid
 WHERE c.effectiveenddate IS NOT NULL
 ORDER BY c.effectiveenddate ASC;""",
     "Voluntários Ativos": """SELECT 
-    v.voluntary_id,
+    v.personid,
     v.applicants,
     v.email_address,
     m.isreceiveelectronicnotifications,

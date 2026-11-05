@@ -548,7 +548,7 @@ class ReportManager:
         """
         query = """
         SELECT 
-            v.voluntary_id,
+            v.personid,
             v.applicants,
             v.email_address,
             m.isreceiveelectronicnotifications,
