@@ -2,8 +2,19 @@ name: Daily Filiados Ingestion & Data Lake Sync
 
 on:
   schedule:
-    # Executa diariamente às 10:08 BRT (13:08 UTC), 15 min após o disparo do ThoughtSpot (10:00 BRT)
-    - cron: '08 13 * * *'  
+    # Múltiplas execuções com minutos quebrados (menos concorridos no GitHub):
+    # - 01:23 BRT (04:23 UTC) -> Fechamento / consolidação do dia anterior na madrugada
+    # - 07:19 BRT (10:19 UTC) -> Primeira checagem matinal antes do início do expediente
+    # - 10:23 BRT (13:23 UTC) -> Primeira tentativa logo após o envio do ThoughtSpot (10:00 BRT)
+    # - 11:37 BRT (14:37 UTC) -> Segunda tentativa para garantir atualização ainda pela manhã
+    # - 14:19 BRT (17:19 UTC) -> Atualização do início da tarde
+    # - 17:41 BRT (20:41 UTC) -> Atualização de fechamento do dia
+    - cron: '23 04 * * *'
+    - cron: '19 10 * * *'
+    - cron: '23 13 * * *'
+    - cron: '37 14 * * *'
+    - cron: '19 17 * * *'
+    - cron: '41 20 * * *'
   workflow_dispatch:
     inputs:
       force:
