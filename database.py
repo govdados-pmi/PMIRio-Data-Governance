@@ -770,6 +770,17 @@ class DatabaseManager:
         except Exception:
             return False
 
+    def update_knowledge_asset_status(self, asset_id: int, new_status: str) -> bool:
+        """Atualiza o status de publicação de um ativo de conhecimento (ex: homologação pelo admin)."""
+        placeholder = "%s" if self.is_postgres else "?"
+        sql = f"UPDATE knowledge_asset SET status = {placeholder}, updated_at = CURRENT_TIMESTAMP WHERE asset_id = {placeholder};"
+        try:
+            self.execute_non_query(sql, (new_status.strip(), asset_id))
+            return True
+        except Exception:
+            return False
+
+
     def create_knowledge_asset(self, title: str, category: str, directorate: str, author_name: str,
                                status: str, summary: str, decision_supported: str = "",
                                data_sources: str = "", file_path: str = "", file_type: str = "pptx",

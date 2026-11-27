@@ -143,7 +143,7 @@ def render_knowledge_library(user: Optional[Dict[str, Any]] = None, role: str = 
 
     # Se um ativo específico estiver selecionado para leitura, exibe a tela do leitor
     if st.session_state["library_viewing_asset_id"] is not None:
-        render_study_reader(st.session_state["library_viewing_asset_id"])
+        render_study_reader(st.session_state["library_viewing_asset_id"], role=role)
         return
 
     # Garante que as tabelas e dados iniciais da biblioteca existam
@@ -247,11 +247,20 @@ def render_knowledge_library(user: Optional[Dict[str, Any]] = None, role: str = 
                     )
                 with c_p2:
                     pub_author = st.text_input("Autor / Responsável Técnico:", value=user_name)
-                    pub_status = st.selectbox(
-                        "Status de Publicação:",
-                        options=["Publicado", "Em Revisão"],
-                        index=0
-                    )
+                    if role == "admin":
+                        pub_status = st.selectbox(
+                            "Status de Publicação:",
+                            options=["Publicado", "Em Revisão"],
+                            index=0
+                        )
+                    else:
+                        st.text_input(
+                            "Status de Publicação:",
+                            value="Em Revisão",
+                            disabled=True,
+                            help="Envios de voluntários e usuários comuns entram compulsoriamente como 'Em Revisão' para homologação pela Governança de Dados."
+                        )
+                        pub_status = "Em Revisão"
 
                 pub_summary = st.text_area(
                     "Resumo Executivo / Descrição do Ativo:",
@@ -312,7 +321,10 @@ def render_knowledge_library(user: Optional[Dict[str, Any]] = None, role: str = 
                         ):
                             st.session_state["library_show_publish"] = False
                             st.cache_data.clear()
-                            st.success(f"Ativo '{pub_title}' publicado com sucesso no acervo do capítulo!")
+                            if role == "admin":
+                                st.success(f"Ativo '{pub_title}' cadastrado com sucesso com status '{pub_status}'!")
+                            else:
+                                st.success(f"Ativo '{pub_title}' submetido com sucesso! O documento foi registrado com status 'Em Revisão' e será homologado pelo Comitê de Governança de Dados.")
                             st.rerun()
                         else:
                             st.error("Erro ao registrar o ativo no banco de dados.")
@@ -486,7 +498,7 @@ def render_knowledge_library(user: Optional[Dict[str, Any]] = None, role: str = 
                 st.markdown("<hr style='margin: 10px 0; border: none; border-top: 1px solid #F1F5F9;'>", unsafe_allow_html=True)
 
 
-def render_study_reader(asset_id: int):
+def render_study_reader(asset_id: int, role: str = "view"):
     """
     Renderiza o leitor governado em tela do estudo ou documento selecionado,
     incluindo visualizador de lâminas de alta resolução (para Canvas/PPTX/PDF),
@@ -533,7 +545,30 @@ def render_study_reader(asset_id: int):
     </div>
     """, unsafe_allow_html=True)
 
-    # Banner de Governança
+    # Banner de Governança e Ações Administrativas
+    if role == "admin":
+        st.markdown(f"""
+        <div style="background-color: #F8FAFC; border: 1px solid #CBD5E1; border-left: 4px solid #461DA3; padding: 12px 18px; border-radius: 6px; margin-bottom: 14px; display: flex; justify-content: space-between; align-items: center;">
+            <div style="font-size: 0.88rem; color: #334155;">
+                <strong>Painel de Homologação (Admin):</strong> Status atual: <strong>{asset['status']}</strong>.
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        col_adm1, col_adm2 = st.columns([2, 1])
+        with col_adm2:
+            if asset['status'] == "Em Revisão":
+                if st.button("✓ Homologar & Publicar", type="primary", use_container_width=True, key=f"btn_approve_{asset_id}"):
+                    if db_manager.update_knowledge_asset_status(asset_id, "Publicado"):
+                        st.success("Documento homologado e publicado com sucesso no acervo oficial!")
+                        st.cache_data.clear()
+                        st.rerun()
+            elif asset['status'] == "Publicado":
+                if st.button("Mover para Revisão", type="secondary", use_container_width=True, key=f"btn_revert_{asset_id}"):
+                    if db_manager.update_knowledge_asset_status(asset_id, "Em Revisão"):
+                        st.info("Documento alterado para status 'Em Revisão'.")
+                        st.cache_data.clear()
+                        st.rerun()
+
     st.markdown("""
     <div style="background-color: #F8FAFC; border-left: 4px solid #44789B; padding: 10px 16px; border-radius: 4px; margin-bottom: 18px; font-size: 0.86rem; color: #475569;">
         <strong>Governança Documental PMI Rio:</strong> Documento corporativo disponibilizado estritamente para visualização e consulta estratégica. O download do arquivo bruto está desabilitado para conformidade com a LGPD e preservação dos ativos de conhecimento do capítulo.
