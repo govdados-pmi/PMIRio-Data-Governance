@@ -695,67 +695,6 @@ class DatabaseManager:
                 for item in initial_assets:
                     cur.execute(sql_insert, item)
                 conn.commit()
-
-            # Assegura a inserção dos Canvas de Projetos do Capítulo caso ainda não cadastrados
-            canvas_items = [
-                (
-                    "Canvas do Programa: Governança de Dados 2026",
-                    "Canvas & Modelos de Projeto",
-                    "Diretoria Executiva / Governança",
-                    "Comitê de Governança de Dados",
-                    "Publicado",
-                    False,
-                    "Canvas estrutural que define o escopo, objetivos estratégicos, benefícios esperados e os 4 projetos do Programa de Governança de Dados 2026.",
-                    "Homologado pela Diretoria para submissão aos prêmios de excelência e alocação de equipes de voluntários.",
-                    "Planejamento Estratégico PMI Rio 2025-2026 e Diretrizes do PMI Global.",
-                    "CANVAS PROJETOS/Canvas_Programa_Governanca de Dados 2026.pdf",
-                    "pdf",
-                    1,
-                    36
-                ),
-                (
-                    "Canvas do Projeto: Base de Conhecimento e Sustentabilidade",
-                    "Canvas & Modelos de Projeto",
-                    "Governança de Dados & TI",
-                    "Comitê de Governança de Dados",
-                    "Publicado",
-                    False,
-                    "Canvas do projeto focado em gestão colaborativa do conhecimento, catálogo integrado de dados, autoatendimento corporativo e sustentabilidade do programa.",
-                    "Fundamentou a criação da Biblioteca de Estudos e a Central de Requisição de Dados do portal.",
-                    "Atas do Comitê de Dados e Requisitos da Diretoria Executiva.",
-                    "CANVAS PROJETOS/Canvas_Projeto Base de Conhecimento e Sustentabilidade do Programa.pdf",
-                    "pdf",
-                    1,
-                    32
-                ),
-                (
-                    "Canvas do Projeto: Inteligência Analítica e Machine Learning",
-                    "Canvas & Modelos de Projeto",
-                    "Governança de Dados",
-                    "Comitê de Governança de Dados",
-                    "Publicado",
-                    False,
-                    "Canvas do projeto dedicado a análises preditivas de evasão (churn), modelagem de dados avançada e algoritmos de engajamento de filiados.",
-                    "Apoiou o desenvolvimento dos scores preditivos de retenção de membros.",
-                    "Bases históricas do ThoughtSpot e histórico de renovações.",
-                    "CANVAS PROJETOS/Canvas_Projeto Inteligência Analítica e Machine Learning Aplicado.pdf",
-                    "pdf",
-                    1,
-                    24
-                )
-            ]
-            for c_item in canvas_items:
-                cur.execute(f"SELECT 1 FROM knowledge_asset WHERE title = {placeholder};", (c_item[0],))
-                if not cur.fetchone():
-                    ph_c = f"({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder})"
-                    cur.execute(f"""
-                    INSERT INTO knowledge_asset (
-                        title, category, directorate, author_name, status, is_featured,
-                        summary, decision_supported, data_sources, file_path, file_type, slide_count, view_count
-                    ) VALUES {ph_c};
-                    """, c_item)
-            conn.commit()
-
             cur.close()
         except Exception:
             conn.rollback()
