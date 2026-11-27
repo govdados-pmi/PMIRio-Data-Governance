@@ -96,9 +96,89 @@ class DatabaseManager:
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
             """)
+
+            cur.execute(f"""
+            CREATE TABLE IF NOT EXISTS data_request (
+                request_id {id_type},
+                requester_name VARCHAR NOT NULL,
+                requester_email VARCHAR NOT NULL,
+                directorate VARCHAR NOT NULL,
+                project_initiative VARCHAR NOT NULL,
+                business_objective TEXT NOT NULL,
+                data_scope TEXT NOT NULL,
+                urgency VARCHAR NOT NULL DEFAULT 'Normal',
+                deadline VARCHAR,
+                status VARCHAR NOT NULL DEFAULT 'Pendente',
+                admin_notes TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            """)
+
+            cur.execute(f"""
+            CREATE TABLE IF NOT EXISTS user_registration_request (
+                reg_id {id_type},
+                full_name VARCHAR NOT NULL,
+                email VARCHAR NOT NULL,
+                directorate VARCHAR NOT NULL,
+                justification TEXT,
+                password_hash VARCHAR NOT NULL,
+                status VARCHAR NOT NULL DEFAULT 'pending',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            """)
+
+            cur.execute(f"""
+            CREATE TABLE IF NOT EXISTS password_reset_request (
+                reset_id {id_type},
+                email VARCHAR NOT NULL,
+                full_name VARCHAR,
+                reason TEXT,
+                status VARCHAR NOT NULL DEFAULT 'pending',
+                admin_notes TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            """)
+
+            # Tabela de Ativos da Biblioteca de Conhecimento & Estudos
+            cur.execute(f"""
+            CREATE TABLE IF NOT EXISTS knowledge_asset (
+                asset_id {id_type},
+                title VARCHAR NOT NULL,
+                category VARCHAR NOT NULL DEFAULT 'Estudos',
+                directorate VARCHAR NOT NULL,
+                author_name VARCHAR NOT NULL,
+                status VARCHAR NOT NULL DEFAULT 'Homologado',
+                is_featured BOOLEAN DEFAULT FALSE,
+                summary TEXT NOT NULL,
+                decision_supported TEXT,
+                data_sources TEXT,
+                file_path VARCHAR,
+                file_type VARCHAR DEFAULT 'pptx',
+                slide_count INT DEFAULT 0,
+                view_count INT DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            """)
+
+            # Assegura a existência da coluna must_change_password em app_user
+            try:
+                if self.is_postgres:
+                    cur.execute("ALTER TABLE app_user ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN DEFAULT FALSE;")
+                else:
+                    cur.execute("PRAGMA table_info(app_user);")
+                    cols = [col[1] for col in cur.fetchall()]
+                    if "must_change_password" not in cols:
+                        cur.execute("ALTER TABLE app_user ADD COLUMN must_change_password BOOLEAN DEFAULT 0;")
+            except Exception:
+                pass
+
             conn.commit()
             cur.close()
             conn.close()
+
+            # Executa o seed de ativos de conhecimento padrão caso necessário
+            self.seed_default_knowledge_assets()
         except Exception:
             pass
 
@@ -133,30 +213,42 @@ class DatabaseManager:
             conn.close()
 
     def authenticate_user(self, email: str, password: str) -> Optional[Dict[str, Any]]:
-        """Valida e-mail e senha e retorna dicionário com os dados do usuário autenticado."""
-        pwd_hash = self.hash_password(password)
+        """Valida e-mail e senha diretamente no banco (sem cache) e retorna dicionário com os dados do usuário autenticado."""
+        pwd_hash = self.hash_password(password.strip())
         placeholder = "%s" if self.is_postgres else "?"
-        query = f"SELECT user_id, email, full_name, role, allowed_reports, is_active FROM app_user WHERE LOWER(email) = LOWER({placeholder}) AND password_hash = {placeholder};"
+        default_bool = "FALSE" if self.is_postgres else "0"
+        query = f"SELECT user_id, email, full_name, role, allowed_reports, is_active, COALESCE(must_change_password, {default_bool}) FROM app_user WHERE LOWER(email) = LOWER({placeholder}) AND password_hash = {placeholder};"
         
-        df = self.execute_query(query, (email.strip(), pwd_hash))
-        if not df.empty and df.iloc[0]["is_active"]:
-            row = df.iloc[0]
-            return {
-                "user_id": int(row["user_id"]),
-                "email": str(row["email"]),
-                "full_name": str(row["full_name"]),
-                "role": str(row["role"]),
-                "allowed_reports": str(row["allowed_reports"]) if pd.notna(row.get("allowed_reports")) else None
-            }
+        conn = self.get_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute(query, (email.strip(), pwd_hash))
+            row = cur.fetchone()
+            cur.close()
+            if row:
+                # row: user_id, email, full_name, role, allowed_reports, is_active, must_change_password
+                is_active = bool(row[5])
+                if is_active:
+                    return {
+                        "user_id": int(row[0]),
+                        "email": str(row[1]),
+                        "full_name": str(row[2]),
+                        "role": str(row[3]),
+                        "allowed_reports": str(row[4]) if row[4] else "[]",
+                        "must_change_password": bool(row[6]) if len(row) > 6 and row[6] else False
+                    }
+        finally:
+            conn.close()
         return None
 
-    def create_user(self, email: str, password: str, full_name: str, role: str, allowed_reports: Optional[str] = None) -> bool:
-        """Cadastra um novo usuário no banco com controle de permissões de relatórios."""
+    def create_user(self, email: str, password: str, full_name: str, role: str, allowed_reports: Optional[str] = "[]", must_change_password: bool = True) -> bool:
+        """Cadastra um novo usuário no banco com controle de permissões de relatórios e flag de primeiro acesso."""
         pwd_hash = self.hash_password(password)
         placeholder = "%s" if self.is_postgres else "?"
-        sql = f"INSERT INTO app_user (email, password_hash, full_name, role, allowed_reports) VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder});"
+        sql = f"INSERT INTO app_user (email, password_hash, full_name, role, allowed_reports, must_change_password, is_active) VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, TRUE);"
         try:
-            self.execute_non_query(sql, (email.strip().lower(), pwd_hash, full_name.strip(), role.strip(), allowed_reports))
+            final_reports = allowed_reports if allowed_reports is not None else "[]"
+            self.execute_non_query(sql, (email.strip().lower(), pwd_hash, full_name.strip(), role.strip(), final_reports, must_change_password))
             return True
         except Exception:
             return False
@@ -172,10 +264,11 @@ class DatabaseManager:
             return False
 
     def update_user_password(self, user_id: int, new_password: str) -> bool:
-        """Atualiza a senha de um usuário no banco de dados com hash seguro."""
+        """Atualiza a senha de um usuário no banco de dados com hash seguro e reseta a obrigatoriedade de troca de senha."""
         pwd_hash = self.hash_password(new_password)
         placeholder = "%s" if self.is_postgres else "?"
-        sql = f"UPDATE app_user SET password_hash = {placeholder} WHERE user_id = {placeholder};"
+        reset_val = "FALSE" if self.is_postgres else "0"
+        sql = f"UPDATE app_user SET password_hash = {placeholder}, must_change_password = {reset_val} WHERE user_id = {placeholder};"
         try:
             self.execute_non_query(sql, (pwd_hash, user_id))
             return True
@@ -324,6 +417,438 @@ class DatabaseManager:
         sql = f"UPDATE report_access_request SET status = 'rejected' WHERE request_id = {placeholder};"
         try:
             self.execute_non_query(sql, (request_id,))
+            return True
+        except Exception:
+            return False
+
+    # -------------------------------------------------------------------------
+    # GESTÃO DE REQUISIÇÕES DE DADOS (DATA REQUEST HUB)
+    # -------------------------------------------------------------------------
+    def create_data_request(self, requester_name: str, requester_email: str, directorate: str,
+                            project_initiative: str, business_objective: str, data_scope: str,
+                            urgency: str = "Normal", deadline: str = "") -> bool:
+        """Registra uma nova requisição formal de dados ou relatório."""
+        placeholder = "%s" if self.is_postgres else "?"
+        sql = f"""
+        INSERT INTO data_request (requester_name, requester_email, directorate, project_initiative, business_objective, data_scope, urgency, deadline, status)
+        VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, 'Pendente');
+        """
+        try:
+            self.execute_non_query(sql, (requester_name.strip(), requester_email.strip().lower(),
+                                        directorate.strip(), project_initiative.strip(),
+                                        business_objective.strip(), data_scope.strip(),
+                                        urgency.strip(), deadline.strip()))
+            return True
+        except Exception:
+            return False
+
+    def list_data_requests(self, requester_email: Optional[str] = None) -> pd.DataFrame:
+        """Lista requisições de dados (todas para admin ou filtradas por e-mail)."""
+        placeholder = "%s" if self.is_postgres else "?"
+        if requester_email:
+            query = f"SELECT request_id, requester_name, requester_email, directorate, project_initiative, business_objective, data_scope, urgency, deadline, status, admin_notes, created_at FROM data_request WHERE LOWER(requester_email) = LOWER({placeholder}) ORDER BY created_at DESC;"
+            try:
+                return self.execute_query(query, (requester_email.strip(),))
+            except Exception:
+                return pd.DataFrame()
+        else:
+            query = "SELECT request_id, requester_name, requester_email, directorate, project_initiative, business_objective, data_scope, urgency, deadline, status, admin_notes, created_at FROM data_request ORDER BY created_at DESC;"
+            try:
+                return self.execute_query(query)
+            except Exception:
+                return pd.DataFrame()
+
+    def update_data_request_status(self, request_id: int, status: str, admin_notes: str = "") -> bool:
+        """Atualiza o status e parecer técnico de uma requisição de dados."""
+        placeholder = "%s" if self.is_postgres else "?"
+        sql = f"UPDATE data_request SET status = {placeholder}, admin_notes = {placeholder} WHERE request_id = {placeholder};"
+        try:
+            self.execute_non_query(sql, (status.strip(), admin_notes.strip(), request_id))
+            return True
+        except Exception:
+            return False
+
+    # -------------------------------------------------------------------------
+    # GESTÃO DE CADASTRO E RESET DE SENHA (SELF-SERVICE GOVERNADO)
+    # -------------------------------------------------------------------------
+    def create_registration_request(self, full_name: str, email: str, directorate: str,
+                                    justification: str, password: str) -> bool:
+        """Registra pedido de criação de conta institucional."""
+        placeholder = "%s" if self.is_postgres else "?"
+        pwd_hash = self.hash_password(password)
+        sql = f"""
+        INSERT INTO user_registration_request (full_name, email, directorate, justification, password_hash, status)
+        VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, 'pending');
+        """
+        try:
+            self.execute_non_query(sql, (full_name.strip(), email.strip().lower(), directorate.strip(), justification.strip(), pwd_hash))
+            return True
+        except Exception:
+            return False
+
+    def list_registration_requests(self, status: str = "pending") -> pd.DataFrame:
+        """Lista pedidos de cadastro pendentes ou todos."""
+        placeholder = "%s" if self.is_postgres else "?"
+        if status:
+            query = f"SELECT reg_id, full_name, email, directorate, justification, password_hash, status, created_at FROM user_registration_request WHERE status = {placeholder} ORDER BY created_at ASC;"
+            try:
+                return self.execute_query(query, (status,))
+            except Exception:
+                return pd.DataFrame()
+        else:
+            query = "SELECT reg_id, full_name, email, directorate, justification, status, created_at FROM user_registration_request ORDER BY created_at DESC;"
+            try:
+                return self.execute_query(query)
+            except Exception:
+                return pd.DataFrame()
+
+    def approve_registration_request(self, reg_id: int, role: str = "view", allowed_reports: Optional[str] = None) -> bool:
+        """Aprova pedido de cadastro e cria usuário ativo na tabela app_user."""
+        placeholder = "%s" if self.is_postgres else "?"
+        conn = self.get_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute(f"SELECT full_name, email, password_hash FROM user_registration_request WHERE reg_id = {placeholder};", (reg_id,))
+            row = cur.fetchone()
+            if not row:
+                return False
+            full_name, email, pwd_hash = row[0], row[1], row[2]
+            
+            cur.execute(f"SELECT user_id FROM app_user WHERE LOWER(email) = LOWER({placeholder});", (email,))
+            existing = cur.fetchone()
+            if existing:
+                cur.execute(f"UPDATE app_user SET full_name = {placeholder}, password_hash = {placeholder}, role = {placeholder}, allowed_reports = {placeholder}, is_active = TRUE WHERE user_id = {placeholder};",
+                            (full_name, pwd_hash, role, allowed_reports, existing[0]))
+            else:
+                cur.execute(f"INSERT INTO app_user (email, password_hash, full_name, role, allowed_reports, is_active) VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, TRUE);",
+                            (email, pwd_hash, full_name, role, allowed_reports))
+            
+            cur.execute(f"UPDATE user_registration_request SET status = 'approved' WHERE reg_id = {placeholder};", (reg_id,))
+            conn.commit()
+            cur.close()
+            try:
+                st.cache_data.clear()
+            except Exception:
+                pass
+            return True
+        except Exception:
+            conn.rollback()
+            return False
+        finally:
+            conn.close()
+
+    def reject_registration_request(self, reg_id: int) -> bool:
+        """Rejeita solicitação de cadastro."""
+        placeholder = "%s" if self.is_postgres else "?"
+        sql = f"UPDATE user_registration_request SET status = 'rejected' WHERE reg_id = {placeholder};"
+        try:
+            self.execute_non_query(sql, (reg_id,))
+            return True
+        except Exception:
+            return False
+
+    def create_password_reset_request(self, email: str, full_name: str = "", reason: str = "") -> bool:
+        """Registra pedido de recuperação/redefinição de senha."""
+        placeholder = "%s" if self.is_postgres else "?"
+        sql = f"""
+        INSERT INTO password_reset_request (email, full_name, reason, status)
+        VALUES ({placeholder}, {placeholder}, {placeholder}, 'pending');
+        """
+        try:
+            self.execute_non_query(sql, (email.strip().lower(), full_name.strip(), reason.strip()))
+            return True
+        except Exception:
+            return False
+
+    def list_password_reset_requests(self, status: str = "pending") -> pd.DataFrame:
+        """Lista pedidos de recuperação de senha."""
+        placeholder = "%s" if self.is_postgres else "?"
+        if status:
+            query = f"SELECT reset_id, email, full_name, reason, status, admin_notes, created_at FROM password_reset_request WHERE status = {placeholder} ORDER BY created_at ASC;"
+            try:
+                return self.execute_query(query, (status,))
+            except Exception:
+                return pd.DataFrame()
+        else:
+            query = "SELECT reset_id, email, full_name, reason, status, admin_notes, created_at FROM password_reset_request ORDER BY created_at DESC;"
+            try:
+                return self.execute_query(query)
+            except Exception:
+                return pd.DataFrame()
+
+    def resolve_password_reset_request(self, reset_id: int, new_password: str, admin_notes: str = "") -> bool:
+        """Redefine a senha do usuário correspondente e conclui o pedido de reset."""
+        placeholder = "%s" if self.is_postgres else "?"
+        conn = self.get_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute(f"SELECT email FROM password_reset_request WHERE reset_id = {placeholder};", (reset_id,))
+            row = cur.fetchone()
+            if not row:
+                return False
+            email = row[0]
+            pwd_hash = self.hash_password(new_password)
+            flag_val = "TRUE" if self.is_postgres else "1"
+            cur.execute(f"UPDATE app_user SET password_hash = {placeholder}, must_change_password = {flag_val} WHERE LOWER(email) = LOWER({placeholder});", (pwd_hash, email))
+            cur.execute(f"UPDATE password_reset_request SET status = 'resolved', admin_notes = {placeholder} WHERE reset_id = {placeholder};", (admin_notes, reset_id))
+            conn.commit()
+            cur.close()
+            try:
+                st.cache_data.clear()
+            except Exception:
+                pass
+            return True
+        except Exception:
+            conn.rollback()
+            return False
+        finally:
+            conn.close()
+
+    def seed_default_knowledge_assets(self):
+        """Popula os 4 estudos estratégicos fundamentais caso a tabela esteja vazia."""
+        conn = self.get_connection()
+        try:
+            cur = conn.cursor()
+            placeholder = "%s" if self.is_postgres else "?"
+            
+            # Migração: Unifica qualquer status 'Homologado' para 'Publicado'
+            try:
+                cur.execute(f"UPDATE knowledge_asset SET status = 'Publicado' WHERE status = 'Homologado';")
+                conn.commit()
+            except Exception:
+                pass
+
+            cur.execute("SELECT COUNT(*) FROM knowledge_asset;")
+            count = cur.fetchone()[0]
+            if count == 0:
+                ph = f"({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder})"
+                
+                initial_assets = [
+                    (
+                        "Jornada do Filiado: Modelo Metodológico & Score de Engajamento",
+                        "Apresentações Executivas",
+                        "Diretoria de Filiação & Relacionamento",
+                        "Comitê de Governança de Dados",
+                        "Publicado",
+                        True,
+                        "Estudo aprofundado que estabelece o framework metodológico da jornada de filiação no PMI Rio. Define a transição do membro em 4 fases distintas de maturidade (Descoberta, Inscrição, Ativação e Retenção), pontuando comportamentos de 0 a 100 pontos para prever o risco de churn.",
+                        "Orientou a Diretoria a criar réguas de comunicação segmentadas para filiados de primeiro ano, antecipando o contato de renovação antes do período crítico de expiração.",
+                        "Base histórica ThoughtSpot, voluntários ativos (VRMS), presença em eventos Sympla e pesquisas pós-evento (CSAT/NPS).",
+                        "Estudos/Jornada do Filiado/Estudo - Jornada do Filiado.pptx",
+                        "pptx",
+                        13,
+                        42
+                    ),
+                    (
+                        "Análise Estratégica de Certificações & Evolução de Credenciais",
+                        "Estudos & Inteligência de Dados",
+                        "Diretoria de Relacionamento & Certificação",
+                        "Comitê de Governança de Dados",
+                        "Publicado",
+                        True,
+                        "Diagnóstico do volume, distribuição e ritmo de crescimento dos membros ativos credenciados pelo PMI no Rio de Janeiro. Identificou um salto de 17% no número de filiados com certificações válidas em 2025, com dominância de PMP, CAPM e PMI-ACP.",
+                        "Apoiou o planejamento dos Grupos de Estudo preparatórios para 2026 e a criação do programa de mentoria voltado à manutenção de PDUs.",
+                        "Relatórios mensais ThoughtSpot (Módulo de Certificações), OriginalGrantDate e ciclos de renovação ativa.",
+                        "Estudos/Analise Relacionamento/Analise_Certificacoes_2025.pptx",
+                        "pptx",
+                        7,
+                        28
+                    ),
+                    (
+                        "Censo Demográfico & Classificação de Perfis de Filiados",
+                        "Planilhas, Modelos & Censo",
+                        "Diretoria de Filiação",
+                        "Comitê de Governança de Dados",
+                        "Publicado",
+                        False,
+                        "Mapeamento abrangente do perfil profissional dos membros do PMI Rio. Avalia indústrias preponderantes (Óleo & Gás, Tecnologia, Engenharia e Serviços Financeiros), cargos executivos e operacionais e distribuição geográfica.",
+                        "Subsidou a precificação e a seleção de temas para os congressos e workshops do capítulo, alinhando com indústrias que concentram 70% da base.",
+                        "Base consolidada de filiados ativos do PMI Global, campos de indústria e cargo auditados.",
+                        "Estudos/Analise de Perfis/Analise dos dados de nossos filiados - Dez_24.pptx",
+                        "pptx",
+                        11,
+                        19
+                    ),
+                    (
+                        "Diagnóstico de Relacionamento & Saúde da Base de Membros",
+                        "Apresentações Executivas",
+                        "Diretoria de Filiação & Relacionamento",
+                        "Comitê de Governança de Dados",
+                        "Em Revisão",
+                        False,
+                        "Revisão executiva dos indicadores de atratividade e evasão de filiados. Analisa a correlação entre participação em eventos e taxa de renovação anual.",
+                        "Recomendou a reformulação dos eventos de boas-vindas e ações conjuntas com a Diretoria de Voluntariado para retenção ativa.",
+                        "Extratos de faturamento e filiação ThoughtSpot, histórico de contatos e cruzamento relacional.",
+                        "Estudos/Analise Relacionamento/Analise Relacionamento.pptx",
+                        "pptx",
+                        20,
+                        15
+                    )
+                ]
+                
+                sql_insert = f"""
+                INSERT INTO knowledge_asset (
+                    title, category, directorate, author_name, status, is_featured,
+                    summary, decision_supported, data_sources, file_path, file_type, slide_count, view_count
+                ) VALUES {ph};
+                """
+                for item in initial_assets:
+                    cur.execute(sql_insert, item)
+                conn.commit()
+
+            # Assegura a inserção dos Canvas de Projetos do Capítulo caso ainda não cadastrados
+            canvas_items = [
+                (
+                    "Canvas do Programa: Governança de Dados 2026",
+                    "Canvas & Modelos de Projeto",
+                    "Diretoria Executiva / Governança",
+                    "Comitê de Governança de Dados",
+                    "Publicado",
+                    False,
+                    "Canvas estrutural que define o escopo, objetivos estratégicos, benefícios esperados e os 4 projetos do Programa de Governança de Dados 2026.",
+                    "Homologado pela Diretoria para submissão aos prêmios de excelência e alocação de equipes de voluntários.",
+                    "Planejamento Estratégico PMI Rio 2025-2026 e Diretrizes do PMI Global.",
+                    "CANVAS PROJETOS/Canvas_Programa_Governanca de Dados 2026.pdf",
+                    "pdf",
+                    1,
+                    36
+                ),
+                (
+                    "Canvas do Projeto: Base de Conhecimento e Sustentabilidade",
+                    "Canvas & Modelos de Projeto",
+                    "Governança de Dados & TI",
+                    "Comitê de Governança de Dados",
+                    "Publicado",
+                    False,
+                    "Canvas do projeto focado em gestão colaborativa do conhecimento, catálogo integrado de dados, autoatendimento corporativo e sustentabilidade do programa.",
+                    "Fundamentou a criação da Biblioteca de Estudos e a Central de Requisição de Dados do portal.",
+                    "Atas do Comitê de Dados e Requisitos da Diretoria Executiva.",
+                    "CANVAS PROJETOS/Canvas_Projeto Base de Conhecimento e Sustentabilidade do Programa.pdf",
+                    "pdf",
+                    1,
+                    32
+                ),
+                (
+                    "Canvas do Projeto: Inteligência Analítica e Machine Learning",
+                    "Canvas & Modelos de Projeto",
+                    "Governança de Dados",
+                    "Comitê de Governança de Dados",
+                    "Publicado",
+                    False,
+                    "Canvas do projeto dedicado a análises preditivas de evasão (churn), modelagem de dados avançada e algoritmos de engajamento de filiados.",
+                    "Apoiou o desenvolvimento dos scores preditivos de retenção de membros.",
+                    "Bases históricas do ThoughtSpot e histórico de renovações.",
+                    "CANVAS PROJETOS/Canvas_Projeto Inteligência Analítica e Machine Learning Aplicado.pdf",
+                    "pdf",
+                    1,
+                    24
+                )
+            ]
+            for c_item in canvas_items:
+                cur.execute(f"SELECT 1 FROM knowledge_asset WHERE title = {placeholder};", (c_item[0],))
+                if not cur.fetchone():
+                    ph_c = f"({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder})"
+                    cur.execute(f"""
+                    INSERT INTO knowledge_asset (
+                        title, category, directorate, author_name, status, is_featured,
+                        summary, decision_supported, data_sources, file_path, file_type, slide_count, view_count
+                    ) VALUES {ph_c};
+                    """, c_item)
+            conn.commit()
+
+            cur.close()
+        except Exception:
+            conn.rollback()
+        finally:
+            conn.close()
+
+    def list_knowledge_assets(self, category: Optional[str] = None, sort_by: str = "popular", search: Optional[str] = None) -> pd.DataFrame:
+        """Retorna os ativos de conhecimento com suporte a filtro de categoria, busca e ordenação."""
+        conditions = []
+        params = []
+        placeholder = "%s" if self.is_postgres else "?"
+        
+        if category and category != "Todos":
+            conditions.append(f"category = {placeholder}")
+            params.append(category)
+            
+        if search:
+            search_pattern = f"%{search.strip().lower()}%"
+            conditions.append(f"(LOWER(title) LIKE {placeholder} OR LOWER(directorate) LIKE {placeholder} OR LOWER(summary) LIKE {placeholder} OR LOWER(author_name) LIKE {placeholder})")
+            params.extend([search_pattern, search_pattern, search_pattern, search_pattern])
+            
+        where_clause = " WHERE " + " AND ".join(conditions) if conditions else ""
+        
+        if sort_by == "popular":
+            order_clause = " ORDER BY view_count DESC, created_at DESC"
+        elif sort_by == "title":
+            order_clause = " ORDER BY title ASC"
+        else:
+            order_clause = " ORDER BY created_at DESC, view_count DESC"
+            
+        sql = f"SELECT asset_id, title, category, directorate, author_name, status, is_featured, summary, decision_supported, data_sources, file_path, file_type, slide_count, view_count, created_at, updated_at FROM knowledge_asset{where_clause}{order_clause};"
+        return self.execute_query(sql, tuple(params) if params else None)
+
+    def get_knowledge_asset(self, asset_id: int) -> Optional[Dict[str, Any]]:
+        """Busca um ativo de conhecimento individual pelo ID."""
+        placeholder = "%s" if self.is_postgres else "?"
+        sql = f"SELECT asset_id, title, category, directorate, author_name, status, is_featured, summary, decision_supported, data_sources, file_path, file_type, slide_count, view_count, created_at FROM knowledge_asset WHERE asset_id = {placeholder};"
+        conn = self.get_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute(sql, (asset_id,))
+            row = cur.fetchone()
+            cur.close()
+            if row:
+                return {
+                    "asset_id": row[0],
+                    "title": row[1],
+                    "category": row[2],
+                    "directorate": row[3],
+                    "author_name": row[4],
+                    "status": row[5],
+                    "is_featured": bool(row[6]),
+                    "summary": row[7],
+                    "decision_supported": row[8] or "",
+                    "data_sources": row[9] or "",
+                    "file_path": row[10] or "",
+                    "file_type": row[11] or "pptx",
+                    "slide_count": row[12] or 0,
+                    "view_count": row[13] or 0,
+                    "created_at": row[14]
+                }
+        finally:
+            conn.close()
+        return None
+
+    def increment_asset_views(self, asset_id: int) -> bool:
+        """Incrementa a contagem de visualizações de um documento da biblioteca."""
+        placeholder = "%s" if self.is_postgres else "?"
+        sql = f"UPDATE knowledge_asset SET view_count = view_count + 1 WHERE asset_id = {placeholder};"
+        try:
+            self.execute_non_query(sql, (asset_id,))
+            return True
+        except Exception:
+            return False
+
+    def create_knowledge_asset(self, title: str, category: str, directorate: str, author_name: str,
+                               status: str, summary: str, decision_supported: str = "",
+                               data_sources: str = "", file_path: str = "", file_type: str = "pptx",
+                               slide_count: int = 0, is_featured: bool = False) -> bool:
+        """Cadastra um novo ativo de conhecimento publicado na biblioteca."""
+        placeholder = "%s" if self.is_postgres else "?"
+        sql = f"""
+        INSERT INTO knowledge_asset (
+            title, category, directorate, author_name, status, is_featured,
+            summary, decision_supported, data_sources, file_path, file_type, slide_count, view_count
+        ) VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, 1);
+        """
+        try:
+            self.execute_non_query(sql, (
+                title.strip(), category.strip(), directorate.strip(), author_name.strip(),
+                status.strip(), is_featured, summary.strip(), decision_supported.strip(),
+                data_sources.strip(), file_path.strip(), file_type.strip(), slide_count
+            ))
             return True
         except Exception:
             return False

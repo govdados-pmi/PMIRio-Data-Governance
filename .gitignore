@@ -37,3 +37,4 @@ datalake/
 *.swp
 *.swo
 scratch/
+.slide_cache/

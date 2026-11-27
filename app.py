@@ -6,9 +6,16 @@ import tempfile
 import json
 import importlib
 import warnings
+import secrets
+import string
 from datetime import datetime, timedelta
 
 warnings.filterwarnings("ignore", category=UserWarning, module="openpyxl")
+
+def generate_random_temp_password(length: int = 10) -> str:
+    """Gera senha provisória de alta entropia contendo letras, números e símbolos seguros."""
+    alphabet = string.ascii_letters + string.digits + "@#$%"
+    return "".join(secrets.choice(alphabet) for _ in range(length))
 
 import database
 importlib.reload(database)
@@ -18,10 +25,18 @@ import reports
 importlib.reload(reports)
 from reports import report_manager
 
+import knowledge_library
+importlib.reload(knowledge_library)
+from knowledge_library import render_knowledge_library
+
+import data_requests_module
+importlib.reload(data_requests_module)
+from data_requests_module import render_data_requests_hub
+
 # Configuração da Página
 st.set_page_config(
-    page_title="PMI Rio - Governança & Ingestão de Dados",
-    page_icon="📊",
+    page_title="PMI Rio - Governança & Inteligência de Dados",
+    page_icon="https://www.pmi.org/-/media/pmi/global/images/logos/pmi-logo.svg",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
@@ -141,53 +156,146 @@ if "user" not in st.session_state:
     st.session_state["user"] = None
 
 # ==============================================================================
-# TELA DE LOGIN (Caso não autenticado)
+# TELA DE AUTENTICAÇÃO CORPORATIVA (Caso não autenticado)
 # ==============================================================================
 if not st.session_state.get("logged_in", False) or not st.session_state.get("user"):
     st.session_state["logged_in"] = False
     st.session_state["user"] = None
     
-    st.markdown('<h1 class="main-title" style="text-align: center;">PMI Rio — Portal de Dados & Governança</h1>', unsafe_allow_html=True)
-    st.markdown('<p class="sub-title" style="text-align: center;">Autoatendimento Seguro e Governança de Dados do Capítulo</p>', unsafe_allow_html=True)
+    st.markdown('<h1 class="main-title" style="text-align: center;">PMI Rio — Portal de Governança & Inteligência de Dados</h1>', unsafe_allow_html=True)
+    st.markdown('<p class="sub-title" style="text-align: center;">Plataforma Corporativa de Autoatendimento, Gestão do Conhecimento e Sustentabilidade</p>', unsafe_allow_html=True)
     
     col_l1, col_l2, col_l3 = st.columns([1, 2, 1])
     with col_l2:
-        st.subheader("🔑 Autenticação de Acesso")
-        with st.form("login_form"):
-            email_input = st.text_input("E-mail Institucional", placeholder="diretoria@pmirio.org.br")
-            password_input = st.text_input("Senha", type="password", placeholder="••••••••")
-            submit_login = st.form_submit_button("Entrar no Portal", type="primary", use_container_width=True)
-            
-            if submit_login:
-                user = db_manager.authenticate_user(email_input, password_input)
-                if user:
-                    st.session_state["logged_in"] = True
-                    st.session_state["user"] = user
-                    st.success(f"Bem-vindo(a), {user['full_name']}!")
-                    st.rerun()
-                else:
-                    st.error("Credenciais inválidas ou conta inativa. Tente novamente.")
+        auth_tabs = st.tabs(["Acessar Conta", "Solicitar Cadastro", "Esqueci Minha Senha"])
+        
+        # 1. Login
+        with auth_tabs[0]:
+            st.markdown("#### Acesso ao Portal")
+            with st.form("login_form"):
+                email_input = st.text_input("E-mail Institucional", placeholder="diretoria@pmirio.org.br")
+                password_input = st.text_input("Senha", type="password", placeholder="••••••••")
+                submit_login = st.form_submit_button("Entrar no Portal", type="primary", use_container_width=True)
+                
+                if submit_login:
+                    user = db_manager.authenticate_user(email_input, password_input)
+                    if user:
+                        st.session_state["logged_in"] = True
+                        st.session_state["user"] = user
+                        st.success(f"Autenticação realizada com sucesso. Bem-vindo(a), {user['full_name']}!")
+                        st.rerun()
+                    else:
+                        st.error("Credenciais inválidas ou conta inativa. Verifique os dados ou solicite redefinição.")
+        
+        # 2. Solicitar Cadastro
+        with auth_tabs[1]:
+            st.markdown("#### Solicitar Novo Acesso")
+            st.caption("Destinado a diretores, gerentes de projetos e voluntários do PMI Rio.")
+            with st.form("register_form", clear_on_submit=True):
+                reg_name = st.text_input("Nome Completo *", placeholder="Ex: Maria Silva")
+                reg_email = st.text_input("E-mail Institucional (@pmirio.org.br ou cadastrado no PMI) *", placeholder="maria.silva@pmirio.org.br")
+                reg_dir = st.selectbox("Diretoria / Área de Atuação", [
+                    "Diretoria de Filiação",
+                    "Diretoria de Voluntariado",
+                    "Diretoria de Certificação & Desenvolvimento",
+                    "Diretoria de Eventos & Parcerias",
+                    "Diretoria de Comunicação & Marketing",
+                    "Diretoria de Operações & Finanças",
+                    "Presidência & Diretoria Executiva",
+                    "Outro Programa"
+                ])
+                reg_just = st.text_area("Justificativa de Acesso *", placeholder="Informe a iniciativa ou atividade em que atuará.")
+                reg_pwd = st.text_input("Definir Senha de Acesso *", type="password", placeholder="Mínimo 6 caracteres")
+                submit_reg = st.form_submit_button("Enviar Solicitação de Cadastro", type="primary", use_container_width=True)
+                
+                if submit_reg:
+                    if not reg_name.strip() or not reg_email.strip() or not reg_just.strip() or len(reg_pwd.strip()) < 6:
+                        st.error("Por favor, preencha todos os campos obrigatórios e utilize uma senha de no mínimo 6 caracteres.")
+                    else:
+                        if db_manager.create_registration_request(reg_name, reg_email, reg_dir, reg_just, reg_pwd):
+                            st.success("Solicitação enviada com sucesso! A Governança de Dados analisará seu pedido para homologação do acesso.")
+                        else:
+                            st.error("Erro ao registrar solicitação. Tente novamente ou contate o administrador.")
+                            
+        # 3. Esqueci Minha Senha
+        with auth_tabs[2]:
+            st.markdown("#### Recuperação de Acesso")
+            st.caption("Informe seu e-mail cadastrado para solicitar a redefinição segura de sua senha pela Governança de Dados.")
+            with st.form("forgot_password_form", clear_on_submit=True):
+                forgot_email = st.text_input("E-mail Cadastrado *", placeholder="usuario@pmirio.org.br")
+                forgot_name = st.text_input("Nome Completo (Opcional)", placeholder="Para conferência cadastral")
+                forgot_reason = st.text_input("Motivo / Observação", placeholder="Ex: Esqueci a senha / Perda de credencial")
+                submit_forgot = st.form_submit_button("Solicitar Redefinição de Senha", type="primary", use_container_width=True)
+                
+                if submit_forgot:
+                    if not forgot_email.strip():
+                        st.error("Informe o e-mail cadastrado.")
+                    else:
+                        if db_manager.create_password_reset_request(forgot_email, forgot_name, forgot_reason):
+                            st.success("Pedido de redefinição registrado com sucesso! O administrador emitirá uma nova senha temporária para você.")
+                        else:
+                            st.error("Erro ao registrar pedido de recuperação.")
     st.stop()
 
 # ==============================================================================
 # APLICAÇÃO PRINCIPAL (Usuário Autenticado)
 # ==============================================================================
-user = st.session_state["user"]
-role = user["role"]
+user = st.session_state.get("user")
+if not user:
+    st.stop()
+role = user.get("role", "view")
 
-# Header Principal com Botão de Logout no Canto Superior Direito
+# Header Principal com Botão de Logout Corporativo no Canto Superior Direito
 col_hdr1, col_hdr2 = st.columns([3, 1])
 with col_hdr1:
-    st.markdown('<h1 class="main-title">PMI Rio — Portal de Dados & Governança</h1>', unsafe_allow_html=True)
-    st.markdown(f'<p class="sub-title">Conectado como <strong>{user["full_name"]}</strong> ({user["email"]})</p>', unsafe_allow_html=True)
+    st.markdown('<h1 class="main-title">PMI Rio — Portal de Governança & Inteligência de Dados</h1>', unsafe_allow_html=True)
+    st.markdown(f'<p class="sub-title">Usuário autenticado: <strong>{user["full_name"]}</strong> ({user["email"]})</p>', unsafe_allow_html=True)
 with col_hdr2:
     badge_class = f"badge-{role}" if role in ["admin", "view"] else "badge-view"
-    role_desc = "👑 Admin" if role == "admin" else "👁️ Visualização"
+    role_desc = "ADMINISTRADOR" if role == "admin" else "VISUALIZAÇÃO"
     st.markdown(f'<div style="text-align: right; margin-bottom: 6px;"><span class="role-badge {badge_class}">{role_desc}</span></div>', unsafe_allow_html=True)
-    if st.button("🚪 Sair (Logout)", type="secondary", use_container_width=True, key="top_right_logout_btn"):
+    if st.button("Encerrar Sessão", type="secondary", use_container_width=True, key="top_right_logout_btn"):
         st.session_state["logged_in"] = False
         st.session_state["user"] = None
         st.rerun()
+
+# ------------------------------------------------------------------------------
+# VERIFICAÇÃO DE PRIMEIRO ACESSO / TROCA OBRIGATÓRIA DE SENHA
+# ------------------------------------------------------------------------------
+if user.get("must_change_password"):
+    st.markdown("""
+    <div style="background-color: #FEF3C7; border-left: 4px solid #D97706; padding: 18px 22px; border-radius: 8px; margin: 20px 0;">
+        <h3 style="color: #92400E; margin: 0 0 8px 0; font-size: 1.2rem; font-weight: 700;">Primeiro Acesso — Redefinição Obrigatória de Senha</h3>
+        <p style="color: #78350F; margin: 0; font-size: 0.96rem; line-height: 1.6;">
+            Olá, <strong>""" + user["full_name"] + """</strong>! Você acessou o portal com uma senha temporária gerada pela administração.
+            Em conformidade com a política de segurança da informação e governança de dados do PMI Rio, é <strong>obrigatório</strong> cadastrar uma nova senha pessoal antes de acessar os relatórios e estudos do capítulo.
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    col_fc1, col_fc2, col_fc3 = st.columns([1, 2, 1])
+    with col_fc2:
+        with st.form("form_first_login_password_change"):
+            st.markdown("#### Cadastrar Nova Senha Pessoal")
+            new_p1 = st.text_input("Nova Senha", type="password", placeholder="Mínimo de 6 caracteres")
+            new_p2 = st.text_input("Confirme a Nova Senha", type="password", placeholder="Repita a nova senha")
+            btn_sub_pwd = st.form_submit_button("Salvar Nova Senha & Acessar Portal", type="primary", use_container_width=True)
+            
+            if btn_sub_pwd:
+                if not new_p1 or not new_p2:
+                    st.error("Preencha ambos os campos de senha.")
+                elif len(new_p1) < 6:
+                    st.error("A nova senha deve possuir no mínimo 6 caracteres.")
+                elif new_p1 != new_p2:
+                    st.error("As senhas informadas não coincidem.")
+                else:
+                    if db_manager.update_user_password(user["user_id"], new_p1):
+                        st.session_state["user"]["must_change_password"] = False
+                        st.success("Senha cadastrada com sucesso! Redirecionando para o portal...")
+                        st.rerun()
+                    else:
+                        st.error("Erro ao atualizar a senha no banco de dados.")
+    st.stop()
 
 
 # Dicionário de relatórios padrão do sistema (Filiados Ativos em primeiro lugar)
@@ -207,17 +315,21 @@ STANDARD_REPORTS_DICT = {
     "Voluntarios_Ativos": "Voluntários Ativos"
 }
 
-# Define Abas disponíveis de acordo com o papel (RBAC)
+# Define Abas disponíveis de acordo com o papel (RBAC) com foco corporativo
 tabs_map = {}
 if role == "admin":
-    tabs_map["users"] = "🔑 Gestão de Acessos"
-    tabs_map["etl"] = "📥 Ingestão & Atualização (ETL)"
-    tabs_map["db"] = "🗄️ Tabelas & Console SQL"
-    tabs_map["reports"] = "📊 Central de Relatórios"
-    tabs_map["password"] = "🔒 Mudar Senha"
+    tabs_map["reports"] = "Central de Relatórios"
+    tabs_map["knowledge"] = "Biblioteca de Conhecimento"
+    tabs_map["requests"] = "Solicitação de Dados"
+    tabs_map["users"] = "Gestão de Acessos"
+    tabs_map["etl"] = "Ingestão & ETL"
+    tabs_map["db"] = "Console SQL & Tabelas"
+    tabs_map["password"] = "Segurança & Senha"
 else:
-    tabs_map["reports"] = "📊 Central de Relatórios"
-    tabs_map["password"] = "🔒 Mudar Senha"
+    tabs_map["reports"] = "Central de Relatórios"
+    tabs_map["knowledge"] = "Biblioteca de Conhecimento"
+    tabs_map["requests"] = "Solicitação de Dados"
+    tabs_map["password"] = "Segurança & Senha"
 
 
 tab_objects = st.tabs(list(tabs_map.values()))
@@ -229,8 +341,33 @@ tab_dict = {key: tab_objects[i] for i, key in enumerate(tabs_map.keys())}
 # ==============================================================================
 if "users" in tab_dict:
     with tab_dict["users"]:
-        st.subheader("🔑 Gestão de Acessos & Permissões (RBAC)")
-        st.markdown("Cadastre novos usuários, ative/desative, altere permissões de relatórios ou exclua acessos.")
+        st.subheader("Gestão de Acessos & Permissões (RBAC)")
+        st.markdown("Controle administrativo de usuários, homologação de cadastros, redefinição de senhas e auditoria de acessos.")
+
+        # Alerta de Senha Provisória Gerada (Visualização Única)
+        if "just_created_temp_cred" in st.session_state:
+            cred = st.session_state["just_created_temp_cred"]
+            st.markdown(f"""
+            <div style="background-color: #FEF3C7; border: 2px solid #F59E0B; border-radius: 8px; padding: 18px 22px; margin-bottom: 20px;">
+                <h4 style="color: #92400E; margin-top: 0; font-size: 1.15rem;">Credencial Provisória Gerada — Visualização Única</h4>
+                <p style="color: #78350F; font-size: 0.95rem; margin-bottom: 10px;">
+                    O usuário <strong>{cred['name']}</strong> ({cred['email']}) foi registrado no sistema com sucesso.
+                </p>
+                <div style="display: flex; align-items: center; gap: 12px; margin: 12px 0;">
+                    <span style="font-size: 0.9rem; color: #78350F; font-weight: 600;">Senha Provisória de Primeiro Acesso:</span>
+                    <span style="background-color: #FFFFFF; border: 1px dashed #D97706; padding: 6px 14px; border-radius: 6px; font-family: monospace; font-size: 1.25rem; font-weight: 700; color: #1E293B; letter-spacing: 2px;">
+                        {cred['password']}
+                    </span>
+                </div>
+                <p style="color: #B45309; font-size: 0.86rem; margin-top: 8px; margin-bottom: 12px;">
+                    <strong>Atenção de Governança:</strong> Por políticas de segurança da informação, esta senha <u>só será exibida esta única vez</u> nesta tela. 
+                    Copie-a agora e encaminhe de forma segura ao usuário. No primeiro login dele, o portal bloqueará qualquer acesso até que ele defina sua própria senha pessoal.
+                </p>
+            </div>
+            """, unsafe_allow_html=True)
+            if st.button("Confirmar que copiei a senha e fechar este aviso", key="ack_dismiss_temp_cred", type="primary"):
+                del st.session_state["just_created_temp_cred"]
+                st.rerun()
         
         # Carrega relatórios salvos no banco para a lista de permissões
         custom_reports_df = db_manager.list_custom_reports()
@@ -238,14 +375,86 @@ if "users" in tab_dict:
         if not custom_reports_df.empty:
             for _, crow in custom_reports_df.iterrows():
                 cid = str(crow["report_id"])
-                all_report_options[f"custom_{cid}"] = f"📊 [Custom] {crow['report_name']}"
+                all_report_options[f"custom_{cid}"] = f"[Custom] {crow['report_name']}"
 
         # ----------------------------------------------------------------------
-        # SEÇÃO: SOLICITAÇÕES DE ACESSO A RELATÓRIOS (PENDENTES)
+        # SEÇÃO 1: SOLICITAÇÕES DE CADASTRO DE NOVOS USUÁRIOS (PENDENTES)
+        # ----------------------------------------------------------------------
+        pending_regs = db_manager.list_registration_requests(status="pending")
+        if not pending_regs.empty:
+            st.markdown("### Solicitações de Cadastro de Usuários (Pendentes)")
+            st.info(f"Existem **{len(pending_regs)}** pedido(s) de criação de conta aguardando homologação.")
+            for _, reg_row in pending_regs.iterrows():
+                rg_id = int(reg_row["reg_id"])
+                rg_name = str(reg_row["full_name"])
+                rg_email = str(reg_row["email"])
+                rg_dir = str(reg_row["directorate"])
+                rg_just = str(reg_row["justification"])
+                rg_date = str(reg_row["created_at"])[:16]
+
+                with st.container():
+                    c_rg1, c_rg2, c_rg3, c_rg4 = st.columns([3, 3, 2, 2])
+                    with c_rg1:
+                        st.markdown(f"**{rg_name}**<br><small style='color: #64748B;'>{rg_email}</small>", unsafe_allow_html=True)
+                    with c_rg2:
+                        st.markdown(f"**{rg_dir}**<br><small style='color: #64748B;'>Justificativa: {rg_just}</small>", unsafe_allow_html=True)
+                    with c_rg3:
+                        st.caption(f"Data: {rg_date}")
+                    with c_rg4:
+                        c_appr, c_rej = st.columns(2)
+                        with c_appr:
+                            if st.button("Aprovar", key=f"btn_appr_reg_{rg_id}", type="primary", use_container_width=True):
+                                if db_manager.approve_registration_request(rg_id, role="view"):
+                                    st.success(f"Cadastro de {rg_name} aprovado com perfil de Visualização!")
+                                    st.rerun()
+                                else:
+                                    st.error("Erro ao aprovar cadastro.")
+                        with c_rej:
+                            if st.button("Rejeitar", key=f"btn_rej_reg_{rg_id}", use_container_width=True):
+                                if db_manager.reject_registration_request(rg_id):
+                                    st.info(f"Solicitação de {rg_name} rejeitada.")
+                                    st.rerun()
+                                else:
+                                    st.error("Erro ao rejeitar cadastro.")
+                st.markdown("<hr style='margin: 8px 0;'>", unsafe_allow_html=True)
+
+        # ----------------------------------------------------------------------
+        # SEÇÃO 2: SOLICITAÇÕES DE RECUPERAÇÃO DE SENHA (PENDENTES)
+        # ----------------------------------------------------------------------
+        pending_resets = db_manager.list_password_reset_requests(status="pending")
+        if not pending_resets.empty:
+            st.markdown("### Solicitações de Redefinição de Senha (Pendentes)")
+            st.info(f"Existem **{len(pending_resets)}** pedido(s) de redefinição de senha aguardando atendimento.")
+            for _, rst_row in pending_resets.iterrows():
+                rst_id = int(rst_row["reset_id"])
+                rst_email = str(rst_row["email"])
+                rst_name = str(rst_row["full_name"]) if pd.notna(rst_row.get("full_name")) and rst_row.get("full_name") else "Não informado"
+                rst_reason = str(rst_row["reason"]) if pd.notna(rst_row.get("reason")) and rst_row.get("reason") else "Não informado"
+                rst_date = str(rst_row["created_at"])[:16]
+
+                with st.expander(f"Redefinição para {rst_email} (Solicitado em {rst_date})", expanded=True):
+                    st.markdown(f"**Solicitante:** {rst_name} | **Motivo:** {rst_reason}")
+                    with st.form(f"form_resolve_reset_{rst_id}"):
+                        c_rst1, c_rst2 = st.columns(2)
+                        with c_rst1:
+                            new_temp_pwd = st.text_input("Nova Senha Temporária *", value="PMIrio@2026", key=f"inp_pwd_rst_{rst_id}")
+                        with c_rst2:
+                            rst_notes = st.text_input("Parecer / Observação", value="Senha temporária emitida pelo administrador.", key=f"inp_notes_rst_{rst_id}")
+                        submit_res = st.form_submit_button("Redefinir Senha do Usuário", type="primary")
+                        if submit_res:
+                            if db_manager.resolve_password_reset_request(rst_id, new_temp_pwd, rst_notes):
+                                st.success(f"Senha de {rst_email} redefinida com sucesso para: {new_temp_pwd}")
+                                st.rerun()
+                            else:
+                                st.error("Erro ao redefinir senha.")
+                st.markdown("<hr style='margin: 8px 0;'>", unsafe_allow_html=True)
+
+        # ----------------------------------------------------------------------
+        # SEÇÃO 3: SOLICITAÇÕES DE ACESSO A RELATÓRIOS (PENDENTES)
         # ----------------------------------------------------------------------
         pending_reqs = db_manager.list_pending_access_requests()
         if not pending_reqs.empty:
-            st.markdown("### 📩 Solicitações de Acesso a Relatórios Pendentes")
+            st.markdown("### Solicitações de Acesso a Relatórios (Pendentes)")
             st.info(f"Existem **{len(pending_reqs)}** solicitação(ões) de acesso aguardando sua análise.")
             
             for _, rrow in pending_reqs.iterrows():
@@ -263,83 +472,89 @@ if "users" in tab_dict:
                     with col_pr1:
                         st.markdown(f"**{req_uname}**<br><small style='color: #64748B;'>{req_uemail}</small>", unsafe_allow_html=True)
                     with col_pr2:
-                        st.markdown(f"📊 **{req_rname}**<br><small style='color: #64748B;'>Justificativa: {req_just}</small>", unsafe_allow_html=True)
+                        st.markdown(f"**{req_rname}**<br><small style='color: #64748B;'>Justificativa: {req_just}</small>", unsafe_allow_html=True)
                     with col_pr3:
-                        st.caption(f"📅 {req_date}")
+                        st.caption(f"Data: {req_date}")
                     with col_pr4:
                         c_b1, c_b2 = st.columns(2)
                         with c_b1:
-                            if st.button("✅ Aprovar", key=f"btn_appr_req_{req_id}", type="primary", use_container_width=True):
+                            if st.button("Aprovar", key=f"btn_appr_req_{req_id}", type="primary", use_container_width=True):
                                 if db_manager.approve_access_request(req_id, req_uid, req_rkey):
                                     st.success(f"Acesso ao relatório '{req_rname}' concedido com sucesso para {req_uname}!")
                                     st.rerun()
                                 else:
                                     st.error("Erro ao aprovar solicitação.")
                         with c_b2:
-                            if st.button("❌ Rejeitar", key=f"btn_rej_req_{req_id}", use_container_width=True):
+                            if st.button("Rejeitar", key=f"btn_rej_req_{req_id}", use_container_width=True):
                                 if db_manager.reject_access_request(req_id):
                                     st.info(f"Solicitação de {req_uname} foi rejeitada.")
                                     st.rerun()
                                 else:
                                     st.error("Erro ao rejeitar solicitação.")
-                st.markdown("---")
+                st.markdown("<hr style='margin: 8px 0;'>", unsafe_allow_html=True)
         else:
-            with st.expander("📩 Solicitações de Acesso a Relatórios", expanded=False):
+            with st.expander("Solicitações de Acesso a Relatórios", expanded=False):
                 st.info("Nenhuma solicitação de acesso a relatório pendente no momento.")
 
-        with st.expander("📜 Histórico Completo de Solicitações de Acesso", expanded=False):
+        with st.expander("Histórico de Solicitações de Acesso", expanded=False):
             all_reqs_df = db_manager.list_all_access_requests()
             if not all_reqs_df.empty:
                 st.dataframe(all_reqs_df, use_container_width=True)
             else:
                 st.caption("Nenhuma solicitação registrada até o momento.")
 
-        st.markdown("---")
+        st.markdown("<hr style='margin: 16px 0;'>", unsafe_allow_html=True)
 
-        # Formulário de Cadastro de Novo Acesso em Expander Fechado
-        with st.expander("➕ Cadastrar Novo Acesso", expanded=False):
+        # Formulário de Cadastro Manual de Novo Acesso
+        with st.expander("Cadastrar Novo Acesso Manualmente", expanded=False):
             with st.form("form_add_user"):
                 c1, c2 = st.columns(2)
                 with c1:
                     new_email = st.text_input("E-mail Institucional", placeholder="nome.sobrenome@pmirio.org.br")
                     new_name = st.text_input("Nome Completo", placeholder="Ex: Maria Souza")
                 with c2:
-                    new_pass = st.text_input("Senha Inicial", type="password", placeholder="••••••••")
                     new_role = st.selectbox(
                         "Perfil de Acesso", 
-                        options=["admin", "view"],
-                        format_func=lambda x: "👑 Acesso Total (Administrador)" if x == "admin" else "👁️ Acesso de Visualização"
+                        options=["view", "admin"],
+                        format_func=lambda x: "Visualização (Acesso Restrito por Relatório)" if x == "view" else "Administrador (Acesso Total)"
                     )
+                    st.caption("A senha de primeiro acesso será gerada de forma aleatória e exibida uma única vez após o cadastro.")
                 
                 selected_reports = []
                 if new_role == "view":
-                    st.markdown("#### 🎯 Permissão Granular de Relatórios (Apenas para Acesso de Visualização)")
+                    st.markdown("#### Permissão Granular de Relatórios (Acesso de Visualização)")
+                    st.caption("Por padrão corporativo de governança, o novo usuário inicia sem nenhum relatório liberado. Selecione abaixo apenas os relatórios que ele deve visualizar:")
                     selected_reports = st.multiselect(
                         "Selecione os Relatórios Autorizados:",
                         options=list(all_report_options.keys()),
                         format_func=lambda x: all_report_options[x],
-                        default=list(all_report_options.keys())
+                        default=[]
                     )
                 
-                submit_user = st.form_submit_button("🚀 Cadastrar Novo Acesso", type="primary", use_container_width=True)
+                submit_user = st.form_submit_button("Gerar Senha Aleatória & Cadastrar Acesso", type="primary", use_container_width=True)
                 if submit_user:
-                    if new_email and new_name and new_pass:
+                    if new_email and new_name:
+                        gen_pass = generate_random_temp_password(10)
                         allowed_json = json.dumps(selected_reports) if new_role == "view" else None
-                        if db_manager.create_user(new_email, new_pass, new_name, new_role, allowed_json):
+                        if db_manager.create_user(new_email, gen_pass, new_name, new_role, allowed_json, must_change_password=True):
                             st.cache_data.clear()
-                            st.success(f"Acesso criado com sucesso para {new_name} ({new_email})!")
+                            st.session_state["just_created_temp_cred"] = {
+                                "name": new_name,
+                                "email": new_email,
+                                "password": gen_pass
+                            }
                             st.rerun()
                         else:
                             st.error("Erro ao cadastrar usuário. O e-mail já pode estar cadastrado no banco.")
                     else:
-                        st.warning("Preencha todos os campos obrigatórios do formulário.")
+                        st.warning("Preencha o e-mail e o nome completo do usuário.")
                         
-        st.markdown("---")
+        st.markdown("<hr style='margin: 16px 0;'>", unsafe_allow_html=True)
         col_u_hdr, col_u_ref = st.columns([3, 1])
         with col_u_hdr:
-            st.markdown("### 📋 Usuários Cadastrados no Banco de Dados")
+            st.markdown("### Usuários Cadastrados no Sistema")
         with col_u_ref:
-            if st.button("🔄 Atualizar Lista", key="btn_refresh_users_list", use_container_width=True):
+            if st.button("Atualizar Lista", key="btn_refresh_users_list", use_container_width=True):
                 st.cache_data.clear()
                 st.rerun()
 
@@ -352,11 +567,11 @@ if "users" in tab_dict:
             with m2:
                 st.metric("Acessos Ativos", len(users_df[users_df["is_active"] == True]))
             with m3:
-                st.metric("Administradores (Total)", len(users_df[users_df["role"] == "admin"]))
+                st.metric("Administradores", len(users_df[users_df["role"] == "admin"]))
             with m4:
-                st.metric("Usuários de Visualização", len(users_df[users_df["role"] == "view"]))
+                st.metric("Visualização", len(users_df[users_df["role"] == "view"]))
 
-            st.markdown("---")
+            st.markdown("<hr style='margin: 12px 0;'>", unsafe_allow_html=True)
             
             # Tabela Interativa de Usuários
             for idx, urow in users_df.iterrows():
@@ -379,36 +594,37 @@ if "users" in tab_dict:
                 with col_u1:
                     st.markdown(f"**{uname}**<br><small style='color: #64748B;'>{uemail}</small>", unsafe_allow_html=True)
                 with col_u2:
-                    badge_str = "👑 Admin" if urole == "admin" else "👁️ Visualização"
+                    badge_str = "ADMIN" if urole == "admin" else "VISUALIZAÇÃO"
                     b_class = f"badge-{urole}" if urole in ["admin", "view"] else "badge-view"
                     st.markdown(f'<span class="role-badge {b_class}">{badge_str}</span>', unsafe_allow_html=True)
                     if urole == "view":
-                        st.caption(f"📊 {len(u_allowed_list)} relatórios permitidos")
+                        st.caption(f"{len(u_allowed_list)} relatórios permitidos")
                 with col_u3:
-                    status_str = "🟢 Ativo" if uactive else "🔴 Inativo"
-                    st.markdown(f"**{status_str}**")
+                    status_color = "#10B981" if uactive else "#EF4444"
+                    status_text = "Ativo" if uactive else "Inativo"
+                    st.markdown(f"<span style='color: {status_color}; font-weight: 700;'>● {status_text}</span>", unsafe_allow_html=True)
                 with col_u4:
-                    toggle_btn_label = "🔴 Desativar" if uactive else "🟢 Ativar"
+                    toggle_btn_label = "Desativar" if uactive else "Ativar"
                     if st.button(toggle_btn_label, key=f"btn_toggle_usr_{uid}"):
                         db_manager.toggle_user_status(uid, uactive)
                         st.cache_data.clear()
                         st.rerun()
                 with col_u5:
                     show_edit_key = f"show_edit_{uid}"
-                    if st.button("✏️ Editar", key=f"btn_edit_usr_{uid}"):
+                    if st.button("Editar", key=f"btn_edit_usr_{uid}"):
                         st.session_state[show_edit_key] = not st.session_state.get(show_edit_key, False)
                         st.rerun()
 
                 # Container de edição de permissões/perfil ativado pelo botão 'Editar'
                 if st.session_state.get(f"show_edit_{uid}", False):
                     with st.container():
-                        st.markdown(f"#### ⚙️ Editar Permissões & Perfil do Usuário: **{uname}**")
+                        st.markdown(f"#### Editar Permissões do Usuário: **{uname}**")
                         with st.form(f"form_edit_user_perm_{uid}"):
                             edit_role = st.selectbox(
                                 "Perfil de Acesso:",
                                 options=["view", "admin"],
                                 index=0 if urole == "view" else 1,
-                                format_func=lambda x: "👁️ Acesso de Visualização" if x == "view" else "👑 Acesso Total (Admin)",
+                                format_func=lambda x: "Visualização (Restrito a Relatórios)" if x == "view" else "Administrador (Acesso Total)",
                                 key=f"sel_role_{uid}"
                             )
                             current_selected = [r for r in u_allowed_list if r in all_report_options]
@@ -419,7 +635,7 @@ if "users" in tab_dict:
                                 default=current_selected,
                                 key=f"ms_edit_{uid}"
                             )
-                            submit_edit = st.form_submit_button("💾 Salvar Alterações", type="primary")
+                            submit_edit = st.form_submit_button("Salvar Alterações", type="primary")
                             if submit_edit:
                                 new_json = json.dumps(new_selected) if edit_role == "view" else None
                                 placeholder = "%s" if db_manager.is_postgres else "?"
@@ -429,7 +645,7 @@ if "users" in tab_dict:
                                 st.session_state[f"show_edit_{uid}"] = False
                                 st.success(f"Permissões atualizadas com sucesso para {uname}!")
                                 st.rerun()
-                st.markdown("---")
+                st.markdown("<hr style='margin: 8px 0;'>", unsafe_allow_html=True)
 
 # ==============================================================================
 # ABA: INGESTÃO & ATUALIZAÇÃO (ETL) — Apenas Admin
@@ -453,7 +669,7 @@ if "etl" in tab_dict:
         st.markdown("---")
         use_sample_files = st.checkbox("Usar arquivos locais da pasta 'planilhas/' caso não faça upload manual")
         
-        if st.button("🚀 Executar Pipeline ETL e Atualizar Banco de Dados", type="primary", width="stretch"):
+        if st.button("Executar Pipeline ETL e Atualizar Banco de Dados", type="primary", width="stretch"):
             with st.spinner("Processando planilhas, realizando limpeza e atualizando tabelas no PostgreSQL..."):
                 member_paths = []
                 cert_paths = []
@@ -494,13 +710,13 @@ if "etl" in tab_dict:
 
                 import time
                 t_start = time.time()
-                progress_bar = st.progress(10, text="⚡ Processando Filiados...")
+                progress_bar = st.progress(10, text="Processando Filiados...")
 
                 res_m = pipeline.process_members(member_paths) if member_paths else {"status": "skipped"}
-                progress_bar.progress(50, text="⚡ Processando Certificações...")
+                progress_bar.progress(50, text="Processando Certificações...")
 
                 res_c = pipeline.process_certifications(cert_paths) if cert_paths else {"status": "skipped"}
-                progress_bar.progress(85, text="⚡ Processando Voluntários...")
+                progress_bar.progress(85, text="Processando Voluntários...")
 
                 res_v = pipeline.process_volunteers(vol_path) if vol_path else {"status": "skipped"}
                 progress_bar.progress(100, text="Concluído!")
@@ -508,13 +724,13 @@ if "etl" in tab_dict:
 
                 has_error = False
                 if res_m.get("status") == "error":
-                    st.error(f"❌ Erro na planilha de Filiados: {res_m.get('message')}")
+                    st.error(f"Falha na planilha de Filiados: {res_m.get('message')}")
                     has_error = True
                 if res_c.get("status") == "error":
-                    st.error(f"❌ Erro na planilha de Certificações: {res_c.get('message')}")
+                    st.error(f"Falha na planilha de Certificações: {res_c.get('message')}")
                     has_error = True
                 if res_v.get("status") == "error":
-                    st.error(f"❌ Erro na planilha de Voluntários: {res_v.get('message')}")
+                    st.error(f"Falha na planilha de Voluntários: {res_v.get('message')}")
                     has_error = True
 
                 if not has_error:
@@ -557,7 +773,7 @@ if "etl" in tab_dict:
                             pass
 
                     st.cache_data.clear()
-                    st.success(f"🎉 Pipeline executado com sucesso em **{t_elapsed} segundos**!")
+                    st.success(f"Pipeline executado com sucesso em **{t_elapsed} segundos**!")
 
                     m1, m2, m3, m4, m5, m6 = st.columns(6)
                     with m1:
@@ -876,7 +1092,7 @@ if "db" in tab_dict:
 
         # Adiciona relatórios padrão do sistema
         for r_name, r_sql in STANDARD_REPORTS_SQL.items():
-            preset_options[f"📌 [Padrão] {r_name}"] = ("standard", r_sql, r_name)
+            preset_options[f"[Padrão] {r_name}"] = ("standard", r_sql, r_name)
 
         # Adiciona relatórios customizados do banco
         if not c_reports_df.empty:
@@ -885,11 +1101,11 @@ if "db" in tab_dict:
                 cname = str(crow["report_name"])
                 csql = str(crow["sql_query"])
                 cdesc = str(crow["description"]) if pd.notna(crow.get("description")) else ""
-                preset_options[f"📊 [Customizado] {cname}"] = ("custom", csql, cname, cid, cdesc)
+                preset_options[f"[Customizado] {cname}"] = ("custom", csql, cname, cid, cdesc)
 
         # Dropdown para carregar SQL de um relatório existente
         selected_preset_key = st.selectbox(
-            "📌 Carregar Consulta SQL de Relatório Existente:",
+            "Carregar Consulta SQL de Relatório Existente:",
             options=list(preset_options.keys()),
             key="preset_sql_selector"
         )
@@ -913,7 +1129,7 @@ if "db" in tab_dict:
             height=200
         )
         
-        if st.button("🚀 Executar Consulta SQL", type="primary", use_container_width=True):
+        if st.button("Executar Consulta SQL", type="primary", use_container_width=True):
             try:
                 df_custom = db_manager.execute_query(custom_sql)
                 st.session_state["last_sql_result"] = df_custom
@@ -929,7 +1145,7 @@ if "db" in tab_dict:
                 col_sql_dl1, col_sql_dl2 = st.columns(2)
                 with col_sql_dl1:
                     st.download_button(
-                        "⬇️ Baixar Resultado SQL (CSV)",
+                        "Exportar Resultado (CSV)",
                         data=df_res.to_csv(index=False).encode('utf-8'),
                         file_name=f"consulta_sql_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
                         mime="text/csv",
@@ -941,7 +1157,7 @@ if "db" in tab_dict:
                     df_res.to_excel(bio_sql.name, index=False)
                     with open(bio_sql.name, "rb") as f_sql:
                         st.download_button(
-                            "⬇️ Baixar Resultado SQL (Excel)",
+                            "Exportar Resultado (Excel .xlsx)",
                             data=f_sql.read(),
                             file_name=f"consulta_sql_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
                             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -949,7 +1165,7 @@ if "db" in tab_dict:
                             use_container_width=True
                         )
             
-            st.markdown("---")
+            st.markdown("<hr style='margin: 12px 0;'>", unsafe_allow_html=True)
             if preset_type == "custom":
                 cid = preset_data[3]
                 default_name = preset_data[2]
@@ -957,11 +1173,11 @@ if "db" in tab_dict:
                 
                 col_act1, col_act2 = st.columns(2)
                 with col_act1:
-                    with st.expander("💾 Salvar Alterações Neste Relatório Customizado", expanded=True):
+                    with st.expander("Salvar Alterações Neste Relatório Customizado", expanded=True):
                         with st.form(f"form_update_custom_rep_{cid}"):
                             upd_title = st.text_input("Nome do Relatório", value=default_name)
                             upd_desc = st.text_input("Descrição do Relatório", value=default_desc)
-                            submit_upd = st.form_submit_button("💾 Salvar Alterações", type="primary", use_container_width=True)
+                            submit_upd = st.form_submit_button("Salvar Alterações", type="primary", use_container_width=True)
                             if submit_upd:
                                 query_to_save = st.session_state.get("last_sql_query", custom_sql)
                                 if db_manager.update_custom_report(cid, upd_title, query_to_save, upd_desc):
@@ -971,11 +1187,11 @@ if "db" in tab_dict:
                                 else:
                                     st.error("Erro ao atualizar o relatório no banco.")
                 with col_act2:
-                    with st.expander("➕ Salvar como Novo Relatório Personalizado", expanded=False):
+                    with st.expander("Salvar como Novo Relatório Personalizado", expanded=False):
                         with st.form("form_save_new_custom_report_preset"):
                             rep_title = st.text_input("Nome do Novo Relatório", placeholder="Ex: Cópias de Filiados Ativos")
                             rep_desc = st.text_input("Descrição do Relatório (opcional)", placeholder="Ex: Filtro customizado...")
-                            submit_save_rep = st.form_submit_button("🚀 Salvar como Novo Relatório", type="primary", use_container_width=True)
+                            submit_save_rep = st.form_submit_button("Salvar como Novo Relatório", type="primary", use_container_width=True)
                             if submit_save_rep:
                                 if rep_title.strip():
                                     query_to_save = st.session_state.get("last_sql_query", custom_sql)
@@ -988,13 +1204,13 @@ if "db" in tab_dict:
                                 else:
                                     st.warning("Informe um nome para o novo relatório.")
             else:
-                with st.expander("💾 Salvar esta Consulta como um Relatório Personalizado"):
+                with st.expander("Salvar esta Consulta como Relatório Personalizado"):
                     with st.form("form_save_custom_report"):
                         default_new_title = preset_data[2] if preset_type == "standard" else ""
                         rep_title = st.text_input("Nome do Relatório Personalizado", value=f"Cópia de {default_new_title}" if default_new_title else "", placeholder="Ex: Filiados Ativos da Cidade do Rio")
                         rep_desc = st.text_input("Descrição do Relatório (opcional)", placeholder="Ex: Filtro especial de filiados residentes no Rio de Janeiro")
                         
-                        submit_save_rep = st.form_submit_button("💾 Salvar como Novo Relatório", type="primary", use_container_width=True)
+                        submit_save_rep = st.form_submit_button("Salvar como Novo Relatório", type="primary", use_container_width=True)
                         if submit_save_rep:
                             if rep_title.strip():
                                 query_to_save = st.session_state.get("last_sql_query", custom_sql)
@@ -1008,12 +1224,12 @@ if "db" in tab_dict:
                                 st.warning("Informe um nome para o relatório personalizado.")
 
         # Lista Relatórios Personalizados Salvos
-        st.markdown("---")
+        st.markdown("<hr style='margin: 16px 0;'>", unsafe_allow_html=True)
         col_c_hdr, col_c_ref = st.columns([3, 1])
         with col_c_hdr:
-            st.subheader("📋 Relatórios Personalizados Criados pelo Console SQL")
+            st.subheader("Relatórios Personalizados Criados pelo Console SQL")
         with col_c_ref:
-            if st.button("🔄 Atualizar Lista", key="btn_refresh_custom_reports", use_container_width=True):
+            if st.button("Atualizar Lista", key="btn_refresh_custom_reports", use_container_width=True):
                 st.cache_data.clear()
                 st.rerun()
 
@@ -1034,22 +1250,22 @@ if "db" in tab_dict:
                 with col_c3:
                     c_b1, c_b2 = st.columns(2)
                     with c_b1:
-                        if st.button("✏️ Carregar no Editor", key=f"edit_crep_{cid}", use_container_width=True):
+                        if st.button("Carregar no Editor", key=f"edit_crep_{cid}", use_container_width=True):
                             st.session_state["pending_sql_query"] = csql
-                            st.session_state["pending_preset_key"] = f"📊 [Customizado] {cname}"
+                            st.session_state["pending_preset_key"] = f"[Customizado] {cname}"
                             st.rerun()
                     with c_b2:
-                        if st.button("🗑️ Excluir", key=f"del_crep_{cid}", use_container_width=True):
+                        if st.button("Excluir", key=f"del_crep_{cid}", use_container_width=True):
                             if db_manager.delete_custom_report(cid):
                                 st.cache_data.clear()
                                 st.success(f"Relatório '{cname}' excluído com sucesso!")
                                 st.rerun()
 
-        # Explorador de Tabelas em Título Grande com Expander Fechado
-        st.markdown("---")
-        st.subheader("🔍 Explorador de Tabelas Relacionais (Visualizar Dados Brutos)")
-        with st.expander("👉 Clique aqui para abrir e consultar os registros das tabelas", expanded=False):
-            table_choice = st.selectbox("Selecione a Tabela para Visualizar:", ["person", "membership", "person_history", "certification", "voluntary", "custom_report", "app_user"])
+        # Explorador de Tabelas Relacionais
+        st.markdown("<hr style='margin: 16px 0;'>", unsafe_allow_html=True)
+        st.subheader("Explorador de Tabelas Relacionais (Visualizar Dados Brutos)")
+        with st.expander("Consultar registros das tabelas relacionais", expanded=False):
+            table_choice = st.selectbox("Selecione a Tabela para Visualizar:", ["person", "membership", "person_history", "certification", "voluntary", "custom_report", "app_user", "data_request", "user_registration_request", "password_reset_request"])
             try:
                 df_table = db_manager.execute_query(f"SELECT * FROM {table_choice} LIMIT 500;")
                 st.markdown(f"**Registros exibidos:** {len(df_table)} linhas")
@@ -1057,81 +1273,79 @@ if "db" in tab_dict:
             except Exception as e:
                 st.error(f"Erro ao consultar tabela {table_choice}: {e}")
 
-
-
 # ==============================================================================
 # ABA: CENTRAL DE RELATÓRIOS (Visibilidade de acordo com RBAC)
 # ==============================================================================
 if "reports" in tab_dict:
     with tab_dict["reports"]:
-        st.subheader("📊 Central de Relatórios Executivos & Personalizados")
+        st.subheader("Central de Relatórios Executivos & Personalizados")
         st.markdown("Relatórios gerenciais dinâmicos filtrados conforme suas permissões de acesso.")
-        st.markdown("---")
+        st.markdown("<hr style='margin: 12px 0;'>", unsafe_allow_html=True)
         
         # Dicionário de Metadados do Catálogo de Dados
         report_meta_info = {
             "Filiados_Ativos": {
-                "categoria": "🔵 Gestão de Filiação (Ciclo de Vida)",
+                "categoria": "Gestão de Filiação (Ciclo de Vida)",
                 "descricao": "Base geral nominal de todos os membros ativos (anuidade vigente) no capítulo PMI Rio.",
                 "projetos": "Monitoramento geral do capítulo, relatórios gerenciais e contagem oficial de filiados."
             },
             "Novos_Filiados_30D": {
-                "categoria": "🔵 Gestão de Filiação (Ciclo de Vida)",
+                "categoria": "Gestão de Filiação (Ciclo de Vida)",
                 "descricao": "Relatório focado no acolhimento de novos membros no primeiro mês de vínculo com o capítulo para ações de boas-vindas.",
                 "projetos": "Programa de Boas-Vindas e Jornada do Filiado."
             },
             "Renovados_90D": {
-                "categoria": "🔵 Gestão de Filiação (Ciclo de Vida)",
+                "categoria": "Gestão de Filiação (Ciclo de Vida)",
                 "descricao": "Filiados com início do mandato nos últimos 90 dias cujo ano da primeira filiação é anterior (confirmação de renovação).",
                 "projetos": "Medição de campanhas de retenção e fluxo de agradecimento aos membros."
             },
             "Filiados_1_Trimestre": {
-                "categoria": "🔵 Gestão de Filiação (Ciclo de Vida)",
+                "categoria": "Gestão de Filiação (Ciclo de Vida)",
                 "descricao": "Relatório de membros que completam 3 meses de casa (1º trimestre) no mês de referência.",
                 "projetos": "Apoio às metas LATAM de engajamento e acompanhamento de marcos da Jornada do Filiado."
             },
             "Filiados_1_Semestre": {
-                "categoria": "🔵 Gestão de Filiação (Ciclo de Vida)",
+                "categoria": "Gestão de Filiação (Ciclo de Vida)",
                 "descricao": "Relatório de membros que completam 6 meses de casa (1º semestre) no mês de referência.",
                 "projetos": "Apoio às metas LATAM de engajamento e acompanhamento da Jornada do Filiado."
             },
             "Aniversariantes_Filiacao": {
-                "categoria": "🔵 Gestão de Filiação (Ciclo de Vida)",
+                "categoria": "Gestão de Filiação (Ciclo de Vida)",
                 "descricao": "Filiados ativos que comemoram marcas históricas de filiação (1, 3, 5, 10, 15, 20 ou 25 anos) no mês atual.",
                 "projetos": "Programa de Reconhecimento e Valorização do Filiado."
             },
             "Reconhecimento_Aniversariantes_Renovados": {
-                "categoria": "🏆 Reconhecimento & Valorização",
+                "categoria": "Reconhecimento & Valorização",
                 "descricao": "Filiados que completaram aniversário de filiação no período selecionado e efetivaram a renovação de seu vínculo.",
                 "projetos": "Programa de Reconhecimento, mailing de agradecimento e métricas de retenção pós-aniversário."
             },
             "Desfilia_Prox_30D": {
-                "categoria": "⚠️ Retenção e Risco (Churn)",
+                "categoria": "Retenção & Continuidade (Prevenção de Churn)",
                 "descricao": "Relatório de monitoramento de risco iminente com filiações a expirar nos próximos 30 dias para alerta imediato.",
                 "projetos": "Alerta imediato de retenção e apoio às metas LATAM."
             },
             "Desfilia_Prox_90D": {
-                "categoria": "⚠️ Retenção e Risco (Churn)",
+                "categoria": "Retenção & Continuidade (Prevenção de Churn)",
                 "descricao": "Previsão trimestral de expirações nos próximos 90 dias para planejamento preventivo de retenção.",
                 "projetos": "Planejamento preventivo de retenção e campanhas de renovação."
             },
             "Desfiliados_30D": {
-                "categoria": "⚠️ Retenção e Risco (Churn)",
+                "categoria": "Retenção & Continuidade (Prevenção de Churn)",
                 "descricao": "Relatório de perdas (churn) listando membros cujo vínculo expirou nos últimos 30 dias sem renovação.",
                 "projetos": "Ações de recuperação (win-back) e análise de motivos de saída."
             },
             "Certificados_3_Meses": {
-                "categoria": "🎓 Certificações & Reconhecimento",
+                "categoria": "Certificações & Reconhecimento",
                 "descricao": "Membros do capítulo que conquistaram novas certificações PMI nos últimos 3 meses.",
                 "projetos": "Hall da Fama, postagens sociais e estatísticas do capítulo."
             },
             "Certificacoes_Expirando_Mes": {
-                "categoria": "🎓 Certificações & Reconhecimento",
+                "categoria": "Certificações & Reconhecimento",
                 "descricao": "Certificações ativas cuja data de expiração (effectiveenddate) ocorre no mês de referência.",
                 "projetos": "Alertas de manutenção de credenciais (CCRs / PDUs) e renovação de certificações."
             },
             "Voluntarios_Ativos": {
-                "categoria": "🤝 Voluntariado & Oportunidades",
+                "categoria": "Voluntariado & Oportunidades",
                 "descricao": "Listagem de candidaturas e posições de voluntariado ativas no capítulo.",
                 "projetos": "Gestão da Diretoria de Voluntariado e alocação de equipes de projetos."
             }
@@ -1142,19 +1356,19 @@ if "reports" in tab_dict:
         with col_nav:
             # Mapeamento prévio de chaves de relatórios padrão
             standard_reports_map = {
-                "Filiados_Ativos": ("🔵 Filiados Ativos", "Filiados_Ativos", lambda: report_manager.get_filiados_ativos(ref_date_str), "Filiados_Ativos"),
-                "Novos_Filiados_30D": ("🔵 Novos Filiados (30D)", "Novos_Filiados_30D", lambda: report_manager.get_novos_filiados_30_dias(ref_date_str), "Novos_Filiados_30D"),
-                "Renovados_90D": ("🔵 Filiados Renovados (90D)", "Filiados_Renovados_90D", lambda: report_manager.get_filiados_renovados_90_dias(ref_date_str), "Renovados_90D"),
-                "Filiados_1_Trimestre": ("🔵 1º Trimestre (3M)", "Filiados_1_Trimestre", lambda: report_manager.get_filiados_1_trimestre(ref_date_str), "Filiados_1_Trimestre"),
-                "Filiados_1_Semestre": ("🔵 1º Semestre (6M)", "Filiados_1_Semestre", lambda: report_manager.get_filiados_1_semestre(ref_date_str), "Filiados_1_Semestre"),
-                "Aniversariantes_Filiacao": ("🔵 Aniversariantes de Filiação", "Aniversariantes", lambda: report_manager.get_aniversariantes_filiacao(ref_date_str), "Aniversariantes_Filiacao"),
-                "Reconhecimento_Aniversariantes_Renovados": ("🏆 Reconhecimento (Aniversariantes Renovados)", "Reconhecimento_Aniversariantes_Renovados", lambda: report_manager.get_aniversariantes_renovados(ref_start_date_str, ref_end_date_str), "Reconhecimento_Aniversariantes_Renovados"),
-                "Desfilia_Prox_30D": ("⚠️ A Vencer nos Próximos 30D", "Desfilia_Prox_30D", lambda: report_manager.get_desfiliacao_prox_30_dias(ref_date_str), "Desfilia_Prox_30D"),
-                "Desfilia_Prox_90D": ("⚠️ A Vencer nos Próximos 90D", "Desfilia_Prox_90D", lambda: report_manager.get_desfiliacao_prox_90_dias(ref_date_str), "Desfilia_Prox_90D"),
-                "Desfiliados_30D": ("⚠️ Desfiliados nos Últimos 30D", "Desfiliados_30D", lambda: report_manager.get_desfiliados_30_dias(ref_date_str), "Desfiliados_30D"),
-                "Certificados_3_Meses": ("🎓 Certificados (Últimos 3M)", "Certificados_3_Meses", lambda: report_manager.get_certificados_ultimos_3_meses(ref_date_str), "Certificados_3_Meses"),
-                "Certificacoes_Expirando_Mes": ("🎓 Certificações Expirando no Mês", "Certificacoes_Expirando_Mes", lambda: report_manager.get_certificacoes_expirando_mes(ref_date_str), "Certificacoes_Expirando_Mes"),
-                "Voluntarios_Ativos": ("🤝 Voluntários Ativos", "Voluntarios_Ativos", lambda: report_manager.get_voluntarios_filtrados(), "Voluntarios_Ativos")
+                "Filiados_Ativos": ("Filiados Ativos", "Filiados_Ativos", lambda: report_manager.get_filiados_ativos(ref_date_str), "Filiados_Ativos"),
+                "Novos_Filiados_30D": ("Novos Filiados (30D)", "Novos_Filiados_30D", lambda: report_manager.get_novos_filiados_30_dias(ref_date_str), "Novos_Filiados_30D"),
+                "Renovados_90D": ("Filiados Renovados (90D)", "Filiados_Renovados_90D", lambda: report_manager.get_filiados_renovados_90_dias(ref_date_str), "Renovados_90D"),
+                "Filiados_1_Trimestre": ("1º Trimestre (3M)", "Filiados_1_Trimestre", lambda: report_manager.get_filiados_1_trimestre(ref_date_str), "Filiados_1_Trimestre"),
+                "Filiados_1_Semestre": ("1º Semestre (6M)", "Filiados_1_Semestre", lambda: report_manager.get_filiados_1_semestre(ref_date_str), "Filiados_1_Semestre"),
+                "Aniversariantes_Filiacao": ("Aniversariantes de Filiação", "Aniversariantes", lambda: report_manager.get_aniversariantes_filiacao(ref_date_str), "Aniversariantes_Filiacao"),
+                "Reconhecimento_Aniversariantes_Renovados": ("Reconhecimento (Aniversariantes Renovados)", "Reconhecimento_Aniversariantes_Renovados", lambda: report_manager.get_aniversariantes_renovados(ref_start_date_str, ref_end_date_str), "Reconhecimento_Aniversariantes_Renovados"),
+                "Desfilia_Prox_30D": ("A Vencer nos Próximos 30D", "Desfilia_Prox_30D", lambda: report_manager.get_desfiliacao_prox_30_dias(ref_date_str), "Desfilia_Prox_30D"),
+                "Desfilia_Prox_90D": ("A Vencer nos Próximos 90D", "Desfilia_Prox_90D", lambda: report_manager.get_desfiliacao_prox_90_dias(ref_date_str), "Desfilia_Prox_90D"),
+                "Desfiliados_30D": ("Desfiliados nos Últimos 30D", "Desfiliados_30D", lambda: report_manager.get_desfiliados_30_dias(ref_date_str), "Desfiliados_30D"),
+                "Certificados_3_Meses": ("Certificados (Últimos 3M)", "Certificados_3_Meses", lambda: report_manager.get_certificados_ultimos_3_meses(ref_date_str), "Certificados_3_Meses"),
+                "Certificacoes_Expirando_Mes": ("Certificações Expirando no Mês", "Certificacoes_Expirando_Mes", lambda: report_manager.get_certificacoes_expirando_mes(ref_date_str), "Certificacoes_Expirando_Mes"),
+                "Voluntarios_Ativos": ("Voluntários Ativos", "Voluntarios_Ativos", lambda: report_manager.get_voluntarios_filtrados(), "Voluntarios_Ativos")
             }
 
             # Carrega relatórios customizados salvos no banco
@@ -1170,7 +1384,7 @@ if "reports" in tab_dict:
                     def make_custom_func(sql):
                         return lambda: db_manager.execute_query(sql)
                     
-                    custom_reports_map[c_key] = (f"📊 {cname}", f"Custom_{cname.replace(' ', '_')}", make_custom_func(csql), c_key)
+                    custom_reports_map[c_key] = (f"[Custom] {cname}", f"Custom_{cname.replace(' ', '_')}", make_custom_func(csql), c_key)
 
             # Une todos os relatórios disponíveis
             all_available_reports_map = {**standard_reports_map, **custom_reports_map}
@@ -1187,22 +1401,22 @@ if "reports" in tab_dict:
                     except Exception:
                         user_allowed_keys = []
                 else:
-                    user_allowed_keys = list(all_available_reports_map.keys())
+                    user_allowed_keys = []
 
             all_report_keys = list(all_available_reports_map.keys())
             report_items = [all_available_reports_map[k] for k in all_report_keys]
 
             if not report_items:
-                st.warning("⚠️ Nenhum relatório disponível no sistema.")
+                st.warning("Nenhum relatório disponível no sistema.")
             else:
                 def get_radio_label(idx):
                     item = report_items[idx]
                     k = item[3]
                     title = item[0]
                     has_access = (role == "admin") or (k in user_allowed_keys)
-                    return title if has_access else f"🔒 {title} (Acesso Restrito)"
+                    return title if has_access else f"{title} (Acesso Restrito)"
 
-                st.markdown("#### 📌 Escolha o Relatório")
+                st.markdown("#### Selecione o Relatório")
                 selected_report_idx = st.radio(
                     "Selecione o Relatório:",
                     options=range(len(report_items)),
@@ -1212,9 +1426,9 @@ if "reports" in tab_dict:
                 
                 selected_key = report_items[selected_report_idx][3] if selected_report_idx < len(report_items) else ""
                 
-                st.markdown("---")
+                st.markdown("<hr style='margin: 12px 0;'>", unsafe_allow_html=True)
                 if selected_key == "Reconhecimento_Aniversariantes_Renovados":
-                    st.markdown("#### 📅 Período de Aniversário & Renovação")
+                    st.markdown("#### Período de Aniversário & Renovação")
                     ref_start_input = st.date_input(
                         "Data Inicial (De)",
                         datetime.now() - timedelta(days=30),
@@ -1229,7 +1443,7 @@ if "reports" in tab_dict:
                     ref_end_date_str = ref_end_input.strftime("%Y-%m-%d")
                     ref_date_str = ref_end_date_str
                 else:
-                    st.markdown("#### 📅 Mês de Extração")
+                    st.markdown("#### Mês de Extração")
                     ref_date_input = st.date_input(
                         "Data de Referência",
                         datetime.now(),
@@ -1247,22 +1461,22 @@ if "reports" in tab_dict:
                 has_access = (role == "admin") or (report_key in user_allowed_keys)
 
                 meta_item = report_meta_info.get(report_key, {
-                    "categoria": "📊 Relatórios Customizados",
+                    "categoria": "Relatórios Customizados",
                     "descricao": "Consulta SQL personalizada criada no Console.",
                     "projetos": "Análises sob demanda e relatórios Ad-Hoc da Diretoria."
                 })
 
                 if not has_access:
                     # USUÁRIO NÃO POSSUI ACESSO A ESTE RELATÓRIO
-                    st.warning("🔒 **Acesso Restrito ao Relatório**\n\nVocê não possui permissão para visualizar os dados deste relatório. Confira abaixo a documentação do catálogo e solicite acesso ao administrador.")
+                    st.warning("**Acesso Restrito ao Relatório**\n\nVocê não possui permissão para visualizar os dados deste relatório. Confira abaixo a documentação do catálogo e solicite acesso ao administrador.")
                     
-                    with st.expander("📖 Dicionário de Dados & Informações do Catálogo", expanded=True):
+                    with st.expander("Dicionário de Dados & Informações do Catálogo", expanded=True):
                         col_m1, col_m2 = st.columns(2)
                         with col_m1:
-                            st.markdown(f"**📂 Categoria:** {meta_item['categoria']}")
-                            st.markdown(f"**🎯 Descrição da Base:** {meta_item['descricao']}")
+                            st.markdown(f"**Categoria:** {meta_item['categoria']}")
+                            st.markdown(f"**Descrição da Base:** {meta_item['descricao']}")
                         with col_m2:
-                            st.markdown(f"**🚀 Projetos em Utilização:** {meta_item['projetos']}")
+                            st.markdown(f"**Projetos em Utilização:** {meta_item['projetos']}")
                             
                             users_all_df = db_manager.list_users()
                             authorized_user_names = []
@@ -1273,23 +1487,21 @@ if "reports" in tab_dict:
                                     u_role = str(u_row.get("role", "view"))
                                     u_name = str(u_row.get("full_name", u_row.get("email", "")))
                                     if u_role == "admin":
-                                        authorized_user_names.append(f"{u_name} (👑 Admin)")
+                                        authorized_user_names.append(u_name)
                                     else:
                                         raw_allowed = u_row.get("allowed_reports")
                                         if raw_allowed:
                                             try:
                                                 allowed_list = json.loads(raw_allowed)
                                                 if report_key in allowed_list:
-                                                    authorized_user_names.append(f"{u_name} (👁️ Visualização)")
+                                                    authorized_user_names.append(u_name)
                                             except Exception:
                                                 pass
-                                        else:
-                                            authorized_user_names.append(f"{u_name} (👁️ Visualização)")
-                            perm_text = ", ".join(authorized_user_names) if authorized_user_names else "Nenhum usuário cadastrado."
-                            st.markdown(f"**🔒 Quem Tem Acesso:** {perm_text}")
+                            perm_text = ", ".join(authorized_user_names) if authorized_user_names else "Nenhum usuário com acesso autorizado."
+                            st.markdown(f"**Quem Tem Acesso:** {perm_text}")
 
-                    st.markdown("---")
-                    st.subheader("📩 Pedir Acesso a Este Relatório")
+                    st.markdown("<hr style='margin: 12px 0;'>", unsafe_allow_html=True)
+                    st.subheader("Solicitar Acesso a Este Relatório")
 
                     user_reqs = db_manager.get_user_access_requests(user["user_id"])
                     pending_for_this = pd.DataFrame()
@@ -1298,7 +1510,7 @@ if "reports" in tab_dict:
 
                     if not pending_for_this.empty:
                         req_date = str(pending_for_this.iloc[0]["created_at"])[:16]
-                        st.info(f"⏳ **Solicitação de Acesso Pendente**\n\nSua solicitação de acesso para este relatório foi enviada em **{req_date}** e está aguardando aprovação do administrador.")
+                        st.info(f"**Solicitação de Acesso Pendente**\n\nSua solicitação de acesso para este relatório foi enviada em **{req_date}** e está aguardando aprovação do administrador.")
                     else:
                         was_rejected = False
                         if not user_reqs.empty:
@@ -1307,15 +1519,15 @@ if "reports" in tab_dict:
                                 was_rejected = True
 
                         if was_rejected:
-                            st.caption("⚠️ Uma solicitação prévia foi indeferida. Caso necessário, você pode enviar uma nova solicitação com justificativa detalhada.")
+                            st.caption("Uma solicitação prévia foi indeferida. Caso necessário, você pode enviar uma nova solicitação com justificativa detalhada.")
 
                         with st.form(f"form_req_access_{report_key}"):
                             st.markdown(f"Solicitar permissão de acesso para o relatório **{title}**:")
                             justification = st.text_area("Justificativa / Motivo da Solicitação:", placeholder="Ex: Preciso de acesso a estes dados para o projeto de retenção da diretoria de filiação...")
-                            submit_req = st.form_submit_button("📩 Enviar Solicitação de Acesso", type="primary", use_container_width=True)
+                            submit_req = st.form_submit_button("Enviar Solicitação de Acesso", type="primary", use_container_width=True)
                             if submit_req:
                                 if db_manager.create_access_request(user["user_id"], user["email"], user["full_name"], report_key, title, justification):
-                                    st.success("🎉 Solicitação de acesso enviada com sucesso! O administrador receberá seu pedido no painel de Gestão de Acessos.")
+                                    st.success("Solicitação de acesso enviada com sucesso! O administrador receberá seu pedido no painel de Gestão de Acessos.")
                                     st.rerun()
                                 else:
                                     st.error("Erro ao registrar a solicitação. Tente novamente.")
@@ -1333,7 +1545,7 @@ if "reports" in tab_dict:
                             c_dl1, c_dl2 = st.columns(2)
                             with c_dl1:
                                 st.download_button(
-                                    "⬇️ Baixar em CSV",
+                                    "Exportar CSV",
                                     data=df.to_csv(index=False).encode('utf-8'),
                                     file_name=f"{filename}_{ref_date_str}.csv",
                                     mime="text/csv",
@@ -1346,7 +1558,7 @@ if "reports" in tab_dict:
                                 df.to_excel(bio.name, index=False)
                                 with open(bio.name, "rb") as f:
                                     st.download_button(
-                                        "⬇️ Baixar em Excel",
+                                        "Exportar Excel (.xlsx)",
                                         data=f.read(),
                                         file_name=f"{filename}_{ref_date_str}.xlsx",
                                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -1355,13 +1567,13 @@ if "reports" in tab_dict:
                                         use_container_width=True
                                     )
                         
-                        with st.expander("📖 Dicionário de Dados & Informações do Catálogo", expanded=False):
+                        with st.expander("Dicionário de Dados & Informações do Catálogo", expanded=True):
                             col_m1, col_m2 = st.columns(2)
                             with col_m1:
-                                st.markdown(f"**📂 Categoria:** {meta_item['categoria']}")
-                                st.markdown(f"**🎯 Descrição da Base:** {meta_item['descricao']}")
+                                st.markdown(f"**Categoria:** {meta_item['categoria']}")
+                                st.markdown(f"**Descrição da Base:** {meta_item['descricao']}")
                             with col_m2:
-                                st.markdown(f"**🚀 Projetos em Utilização:** {meta_item['projetos']}")
+                                st.markdown(f"**Projetos em Utilização:** {meta_item['projetos']}")
                                 
                                 users_all_df = db_manager.list_users()
                                 authorized_user_names = []
@@ -1373,23 +1585,21 @@ if "reports" in tab_dict:
                                         u_role = str(u_row.get("role", "view"))
                                         u_name = str(u_row.get("full_name", u_row.get("email", "")))
                                         if u_role == "admin":
-                                            authorized_user_names.append(f"{u_name} (👑 Admin)")
+                                            authorized_user_names.append(u_name)
                                         else:
                                             raw_allowed = u_row.get("allowed_reports")
                                             if raw_allowed:
                                                 try:
                                                     allowed_list = json.loads(raw_allowed)
                                                     if report_key in allowed_list:
-                                                        authorized_user_names.append(f"{u_name} (👁️ Visualização)")
+                                                        authorized_user_names.append(u_name)
                                                 except Exception:
                                                     pass
-                                            else:
-                                                authorized_user_names.append(f"{u_name} (👁️ Visualização)")
 
-                                perm_text = ", ".join(authorized_user_names) if authorized_user_names else "Nenhum usuário cadastrado."
-                                st.markdown(f"**🔒 Quem Tem Acesso:** {perm_text}")
+                                perm_text = ", ".join(authorized_user_names) if authorized_user_names else "Nenhum usuário com acesso autorizado."
+                                st.markdown(f"**Quem Tem Acesso:** {perm_text}")
 
-                        st.markdown("---")
+                        st.markdown("<hr style='margin: 12px 0;'>", unsafe_allow_html=True)
                         st.dataframe(df, width="stretch")
                         
                         # Exibe data e hora da última atualização de acordo com o tipo do relatório
@@ -1402,20 +1612,34 @@ if "reports" in tab_dict:
 
                         last_upd = db_manager.get_last_data_update_info(data_type=dtype)
                         if last_upd:
-                            st.caption(f"🕒 **Dados de {last_upd['data_type']} atualizados pela última vez em:** {last_upd['formatted']} (Horário de Brasília) • **Fonte:** {last_upd['source']}")
+                            st.caption(f"**Dados de {last_upd['data_type']} atualizados pela última vez em:** {last_upd['formatted']} (Horário de Brasília) • **Fonte:** {last_upd['source']}")
                         else:
-                            st.caption(f"🕒 **Dados de {dtype.capitalize()}:** Base sincronizada com o banco de dados.")
+                            st.caption(f"**Dados de {dtype.capitalize()}:** Base sincronizada com o banco de dados.")
                     except Exception as err:
                         st.error(f"Erro ao carregar o relatório '{title}': {err}")
 
 
 
 # ==============================================================================
-# ABA: MUDAR SENHA (Disponível para todos os usuários)
+# ABA: BIBLIOTECA DE CONHECIMENTO & ESTUDOS ESTRATÉGICOS
+# ==============================================================================
+if "knowledge" in tab_dict:
+    with tab_dict["knowledge"]:
+        render_knowledge_library(user, role)
+
+# ==============================================================================
+# ABA: CENTRAL DE REQUISIÇÃO DE DADOS & INTELIGÊNCIA
+# ==============================================================================
+if "requests" in tab_dict:
+    with tab_dict["requests"]:
+        render_data_requests_hub(user, role)
+
+# ==============================================================================
+# ABA: SEGURANÇA & ALTERAÇÃO DE SENHA (Disponível para todos os usuários)
 # ==============================================================================
 if "password" in tab_dict:
     with tab_dict["password"]:
-        st.subheader("🔒 Alterar Minha Senha")
+        st.subheader("Segurança & Alteração de Senha")
         st.markdown("Atualize a senha de acesso da sua conta pessoal.")
         
         col_p1, col_p2, col_p3 = st.columns([1, 2, 1])
@@ -1425,7 +1649,7 @@ if "password" in tab_dict:
                 new_pass = st.text_input("Nova Senha", type="password", placeholder="Mínimo 6 caracteres")
                 confirm_pass = st.text_input("Confirmar Nova Senha", type="password", placeholder="••••••••")
                 
-                submit_change = st.form_submit_button("🔒 Atualizar Minha Senha", type="primary", use_container_width=True)
+                submit_change = st.form_submit_button("Atualizar Senha", type="primary", use_container_width=True)
                 
                 if submit_change:
                     if not curr_pass or not new_pass or not confirm_pass:
@@ -1440,7 +1664,7 @@ if "password" in tab_dict:
                             st.error("A senha atual informada está incorreta.")
                         else:
                             if db_manager.update_user_password(user["user_id"], new_pass):
-                                st.success("🎉 Sua senha foi alterada com sucesso! Utilize a nova senha na próxima autenticação.")
+                                st.success("Sua senha foi alterada com sucesso! Utilize a nova credencial no próximo acesso.")
                             else:
                                 st.error("Erro ao atualizar a senha no banco de dados.")
 

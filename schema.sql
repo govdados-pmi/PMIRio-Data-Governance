@@ -210,3 +210,83 @@ LEFT JOIN LATERAL (
         m.startdateforterm DESC
     LIMIT 1
 ) m ON TRUE;
+
+-- 10. View Leve de Última Atualização para Google Looker Studio (Data Studio)
+CREATE OR REPLACE VIEW vw_looker_ultima_atualizacao AS
+SELECT 
+    data_type AS "Tipo_Dado",
+    filename AS "Ultimo_Arquivo",
+    (created_at - INTERVAL '3 hours') AS "Data_Hora_Atualizacao",
+    TO_CHAR(created_at - INTERVAL '3 hours', 'DD/MM/YYYY "às" HH24:MI') AS "Ultima_Atualizacao_Formatada",
+    record_count AS "Registros_Processados",
+    source AS "Origem"
+FROM (
+    SELECT DISTINCT ON (data_type) 
+        data_type, filename, created_at, record_count, source
+    FROM datalake_raw_files
+    ORDER BY data_type, created_at DESC
+) sub;
+
+-- 11. Tabela de Requisições de Dados e Inteligência (Governança e Autoatendimento)
+CREATE TABLE IF NOT EXISTS data_request (
+    id SERIAL PRIMARY KEY,
+    requester_name VARCHAR(255) NOT NULL,
+    requester_email VARCHAR(255) NOT NULL,
+    directorate VARCHAR(100) NOT NULL,
+    project_name VARCHAR(255) NOT NULL,
+    strategic_objective TEXT NOT NULL,
+    request_type VARCHAR(100) NOT NULL,
+    data_elements TEXT NOT NULL,
+    urgency VARCHAR(50) DEFAULT 'Média',
+    deadline VARCHAR(50),
+    status VARCHAR(50) DEFAULT 'Em Análise',
+    admin_notes TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 12. Tabela de Solicitações de Cadastro de Novos Usuários
+CREATE TABLE IF NOT EXISTS user_registration_request (
+    id SERIAL PRIMARY KEY,
+    full_name VARCHAR(255) NOT NULL,
+    email VARCHAR(255) NOT NULL,
+    directorate VARCHAR(100) NOT NULL,
+    justification TEXT NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    status VARCHAR(50) DEFAULT 'pending',
+    admin_notes TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    resolved_at TIMESTAMP WITH TIME ZONE
+);
+
+-- 13. Tabela de Solicitações de Recuperação / Redefinição de Senha
+CREATE TABLE IF NOT EXISTS password_reset_request (
+    id SERIAL PRIMARY KEY,
+    email VARCHAR(255) NOT NULL,
+    full_name VARCHAR(255),
+    reason TEXT,
+    status VARCHAR(50) DEFAULT 'pending',
+    admin_notes TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    resolved_at TIMESTAMP WITH TIME ZONE
+);
+
+-- 14. Tabela de Ativos da Biblioteca de Conhecimento & Estudos Estratégicos
+CREATE TABLE IF NOT EXISTS knowledge_asset (
+    asset_id SERIAL PRIMARY KEY,
+    title VARCHAR(255) NOT NULL,
+    category VARCHAR(100) NOT NULL DEFAULT 'Estudos',
+    directorate VARCHAR(100) NOT NULL,
+    author_name VARCHAR(150) NOT NULL,
+    status VARCHAR(50) NOT NULL DEFAULT 'Homologado',
+    is_featured BOOLEAN DEFAULT FALSE,
+    summary TEXT NOT NULL,
+    decision_supported TEXT,
+    data_sources TEXT,
+    file_path VARCHAR(500),
+    file_type VARCHAR(20) DEFAULT 'pptx',
+    slide_count INT DEFAULT 0,
+    view_count INT DEFAULT 0,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
