@@ -3,8 +3,23 @@ import sqlite3
 import psycopg2
 from psycopg2.extras import RealDictCursor
 import pandas as pd
+try:
+    import streamlit as st
+except ImportError:
+    class _DummyCacheData:
+        @staticmethod
+        def clear():
+            pass
+        def __call__(self, *args, **kwargs):
+            def decorator(f):
+                return f
+            return decorator
+    class _DummyStreamlit:
+        secrets = {}
+        cache_data = _DummyCacheData()
+    st = _DummyStreamlit()
+
 import hashlib
-import streamlit as st
 import warnings
 from typing import Optional, Union, Any, Dict
 
