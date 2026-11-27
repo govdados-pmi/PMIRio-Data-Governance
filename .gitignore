@@ -34,6 +34,10 @@ datalake/
 .DS_Store
 .idea/
 .vscode/
-*.swp
 scratch/
 
+# Documentos Internos de Premiações e Formulários
+Formulario_Inscricao*
+MAPA_PROGRAMA*
+*.docx
+!Estudos/**/*.docx
