@@ -6,8 +6,16 @@ from datetime import datetime
 from typing import List, Dict, Any, Optional
 import streamlit as st
 import pandas as pd
-import pptx
-from docx import Document
+try:
+    import pptx
+except ImportError:
+    pptx = None
+
+try:
+    from docx import Document
+except ImportError:
+    Document = None
+
 
 from database import db_manager
 
@@ -77,7 +85,7 @@ def get_asset_thumbnail(file_path: str, file_type: str = "pptx") -> Optional[str
 @st.cache_data(show_spinner=False)
 def load_study_pptx(file_path: str):
     """Extrai com segurança os textos e tópicos de cada slide da apresentação para acessibilidade e busca."""
-    if not file_path or not os.path.exists(file_path):
+    if not file_path or not os.path.exists(file_path) or pptx is None:
         return []
     try:
         prs = pptx.Presentation(file_path)
@@ -109,7 +117,7 @@ def load_study_pptx(file_path: str):
 @st.cache_data(show_spinner=False)
 def load_study_docx(file_path: str):
     """Extrai os parágrafos e critérios do documento de texto DOCX."""
-    if not file_path or not os.path.exists(file_path):
+    if not file_path or not os.path.exists(file_path) or Document is None:
         return []
     try:
         doc = Document(file_path)

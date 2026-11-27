@@ -35,6 +35,5 @@ datalake/
 .idea/
 .vscode/
 *.swp
-*.swo
 scratch/
-.slide_cache/
+
